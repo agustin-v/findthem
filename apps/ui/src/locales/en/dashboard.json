@@ -1,0 +1,42 @@
+{
+  "title": "Your searches",
+  "newSearch": "Start a new search",
+  "emptyTitle": "No searches yet",
+  "emptyDescription": "Create your first search to get started.",
+  "firstSearch": "Start your first search",
+  "status": {
+    "active": "Active",
+    "suspended": "Suspended",
+    "resolved": "Resolved"
+  },
+  "volunteers_one": "{{count}} volunteer",
+  "volunteers_other": "{{count}} volunteers",
+  "zones": "{{searched}} / {{total}} zones",
+  "viewReport": "View report",
+  "timeAgo": "{{time}} ago",
+  "detail": {
+    "backToSearches": "Back to searches",
+    "lastSeen": "Last seen",
+    "location": "Location",
+    "notFound": "Search not found.",
+    "volunteers": "{{count}} volunteer",
+    "volunteers_other": "{{count}} volunteers",
+    "zones": "{{searched}} / {{total}} zones",
+    "volunteersTitle": "Volunteers",
+    "online": "Online",
+    "offline": "Offline",
+    "noVolunteers": "No volunteers yet",
+    "legend": {
+      "title": "Zone status",
+      "segment": "Segment boundary",
+      "restricted": "Restricted area",
+      "resource": {
+        "people": "People on foot",
+        "motorbikes": "Motorbikes",
+        "cars": "Cars",
+        "drones": "Drones"
+      }
+    },
+    "generatingArea": "Generating search area..."
+  }
+}

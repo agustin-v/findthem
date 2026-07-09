@@ -1,0 +1,47 @@
+[project]
+name = "findthem-geo"
+version = "0.1.0"
+description = "Geo segmentation engine for FindThem SAR platform"
+readme = "README.md"
+authors = [
+    { name = "Agustin Villalobos", email = "avillaville@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "h3>=4.1",
+    "osmnx>=2.0",
+    "shapely>=2.0",
+    "geopandas>=1.0",
+    "networkx>=3.4",
+    "geojson-pydantic>=1.1",
+    "orjson>=3.10",
+    "pyproj>=3.7",
+]
+
+[project.scripts]
+findthem-geo = "findthem_geo.main:cli"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+    "ruff>=0.9",
+    "mypy>=1.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"

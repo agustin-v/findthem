@@ -1,0 +1,15 @@
+{
+  "appName": "findthem",
+  "loading": "Caricamento...",
+  "error": "Qualcosa è andato storto",
+  "back": "Indietro",
+  "next": "Avanti",
+  "submit": "Invia",
+  "cancel": "Annulla",
+  "save": "Salva",
+  "continue": "Continua",
+  "logout": "Esci",
+  "language": "Lingua",
+  "en": "English",
+  "it": "Italiano"
+}

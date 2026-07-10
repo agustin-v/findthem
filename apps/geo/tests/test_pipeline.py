@@ -239,7 +239,30 @@ class TestPipelineWithRoads:
 
     @patch("findthem_geo.services.pipeline.fetch_osm_data")
     @pytest.mark.anyio
-    async def test_segments_have_entry_point_with_roads(self, mock_osm):
+    async def test_lkp_distance_matches_geodesic(self, mock_osm):
+        from pyproj import Geod
+
+        geod = Geod(ellps="WGS84")
+        mock_osm.return_value = _mock_osm_data_with_roads()
+        req = GenerateSegmentsRequest(
+            center=LatLng(lat=41.905, lng=12.498),
+            radius_km=1.0,
+        )
+
+        resp = run_pipeline(req)
+
+        checked = 0
+        for f in resp.segments["features"]:
+            if not f["properties"]["searchable"]:
+                continue
+            c = shape(f["geometry"]).centroid
+            _, _, dist_m = geod.inv(12.498, 41.905, c.x, c.y)
+            if dist_m < 100:
+                continue
+            reported = f["properties"]["lkp_distance_km"]
+            assert abs(reported - dist_m / 1000.0) / (dist_m / 1000.0) < 0.05
+            checked += 1
+        assert checked > 0
         mock_osm.return_value = _mock_osm_data_with_roads()
         req = GenerateSegmentsRequest(
             center=LatLng(lat=41.905, lng=12.498),

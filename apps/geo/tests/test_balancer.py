@@ -1,4 +1,5 @@
 import h3
+from pyproj import Geod
 from shapely.geometry import LineString, Polygon, box
 
 from findthem_geo.models.domain import H3Cell, Segment
@@ -7,10 +8,13 @@ from findthem_geo.services.balancer import (
     _area_km2,
     _classify_accessibility,
     _compute_workload,
+    _length_km,
     _split_large,
     balance_segments,
 )
 from findthem_geo.services.h3_grid import h3_cell_to_polygon
+
+_geod = Geod(ellps="WGS84")
 
 
 def _make_cell(lat: float, lng: float, resolution: int = 9, **kwargs) -> H3Cell:
@@ -31,6 +35,33 @@ class TestAreaKm2:
         small = box(12.49, 41.90, 12.495, 41.905)
         large = box(12.49, 41.90, 12.50, 41.91)
         assert _area_km2(large) > _area_km2(small)
+
+    def test_area_matches_geodesic_at_high_latitude(self):
+        poly = box(4.85, 52.30, 4.95, 52.40)  # Amsterdam
+        expected_km2 = abs(_geod.geometry_area_perimeter(poly)[0]) / 1e6
+
+        area = _area_km2(poly)
+
+        assert abs(area - expected_km2) / expected_km2 < 0.02
+
+    def test_area_subtracts_holes(self):
+        outer = box(12.49, 41.90, 12.50, 41.91)
+        hole = box(12.493, 41.903, 12.497, 41.907)
+        donut = Polygon(outer.exterior.coords, [hole.exterior.coords])
+
+        area = _area_km2(donut)
+
+        assert abs(area - (_area_km2(outer) - _area_km2(hole))) < 0.001
+
+
+class TestLengthKm:
+    def test_length_matches_geodesic_at_high_latitude(self):
+        line = LineString([(4.85, 52.35), (4.95, 52.35)])
+        expected_km = _geod.line_length(*zip(*line.coords)) / 1000.0
+
+        length = _length_km(line)
+
+        assert abs(length - expected_km) / expected_km < 0.02
 
 
 class TestComputeWorkload:
@@ -365,6 +396,136 @@ class TestSpeedAwareSizing:
         )
         for seg in result:
             assert seg.assigned_resource_type is not None
+
+
+class TestZoneCountMatchesResources:
+    def _cluster(self, x0, y0, n, cells):
+        segs = []
+        for i in range(n):
+            y = y0 + i * 0.003
+            cell = _make_cell(y + 0.001, x0 + 0.005)
+            cells.append(cell)
+            segs.append(
+                Segment(
+                    segment_id=len(cells) - 1,
+                    polygon=box(x0, y, x0 + 0.01, y + 0.003),
+                    cells=[cell.h3_index],
+                )
+            )
+        return segs
+
+    def test_more_fragments_than_units_consolidates_to_unit_count(self):
+        cells = []
+        segs = self._cluster(12.49, 41.90, 3, cells)
+        segs += self._cluster(12.53, 41.90, 1, cells)
+        segs += self._cluster(12.56, 41.90, 1, cells)
+        road_lines = _make_road_grid(12.48, 41.89, 12.58, 41.92)
+
+        result = balance_segments(
+            segs, cells, resources=[Resource(type="people", count=2)], road_lines=road_lines
+        )
+
+        searchable = [s for s in result if s.searchable]
+        assert len(searchable) == 2
+        all_cells = sorted(c for s in result for c in s.cells)
+        assert all_cells == sorted(c.h3_index for c in cells)
+
+    def test_count_capped_by_block_count(self):
+        cells = []
+        segs = self._cluster(12.49, 41.90, 2, cells)
+        road_lines = _make_road_grid(12.48, 41.89, 12.51, 41.92)
+
+        result = balance_segments(
+            segs, cells, resources=[Resource(type="people", count=5)], road_lines=road_lines
+        )
+
+        searchable = [s for s in result if s.searchable]
+        assert len(searchable) == 2
+
+
+class TestFootZonesGrowAroundIslands:
+    def test_person_zone_extends_beyond_foot_island_into_streets(self):
+        cells = []
+        segs = []
+        park = box(12.49, 41.90, 12.492, 41.91)
+        cell = _make_cell(41.905, 12.491)
+        cells.append(cell)
+        segs.append(Segment(segment_id=0, polygon=park, cells=[cell.h3_index]))
+        for i in range(4):
+            x0 = 12.492 + i * 0.01
+            cell = _make_cell(41.905, x0 + 0.005)
+            cells.append(cell)
+            segs.append(
+                Segment(
+                    segment_id=i + 1,
+                    polygon=box(x0, 41.90, x0 + 0.01, 41.91),
+                    cells=[cell.h3_index],
+                )
+            )
+        road_lines = _make_road_grid(12.494, 41.90, 12.532, 41.91)  # strictly inside streets
+        resources = [Resource(type="people", count=1), Resource(type="cars", count=1)]
+
+        result = balance_segments(segs, cells, resources=resources, road_lines=road_lines)
+
+        people = next(s for s in result if s.assigned_resource_type == "people")
+        car = next(s for s in result if s.assigned_resource_type == "cars")
+        park_center = park.centroid
+        assert people.polygon.covers(park_center)
+        assert people.total_area_km2 > 2 * _area_km2(park)
+        assert not car.polygon.covers(park_center)
+
+
+class TestOrphanPartsRehomed:
+    def test_small_foot_pocket_inside_car_territory_joins_car_zone(self):
+        cells = []
+        segs = []
+
+        def add(seg_id, poly, lat, lng):
+            cell = _make_cell(lat, lng)
+            cells.append(cell)
+            segs.append(Segment(segment_id=seg_id, polygon=poly, cells=[cell.h3_index]))
+
+        add(0, box(12.49, 41.90, 12.50, 41.91), 41.905, 12.495)  # big park (person seed)
+        for i in range(4):  # street blocks
+            x0 = 12.50 + i * 0.01
+            add(1 + i, box(x0, 41.90, x0 + 0.01, 41.91), 41.905, x0 + 0.005)
+        add(5, box(12.54, 41.90, 12.542, 41.91), 41.905, 12.541)  # small garden pocket
+        road_lines = _make_road_grid(12.502, 41.90, 12.538, 41.91)
+        resources = [Resource(type="people", count=1), Resource(type="cars", count=1)]
+
+        result = balance_segments(segs, cells, resources=resources, road_lines=road_lines)
+
+        garden_center = box(12.54, 41.90, 12.542, 41.91).centroid
+        car = next(s for s in result if s.assigned_resource_type == "cars")
+        people = next(s for s in result if s.assigned_resource_type == "people")
+        assert car.polygon.covers(garden_center)
+        assert not people.polygon.covers(garden_center)
+        assert people.polygon.geom_type == "Polygon"
+
+
+class TestFallbackResourceType:
+    def test_foot_only_zone_never_gets_unrequested_type(self):
+        all_cells = []
+        segs = []
+        for i in range(2):
+            y_base = 41.90 + i * 0.003
+            cell = _make_cell(y_base + 0.001, 12.495)
+            all_cells.append(cell)
+            segs.append(
+                Segment(
+                    segment_id=i,
+                    polygon=box(12.49, y_base, 12.50, y_base + 0.003),
+                    cells=[cell.h3_index],
+                )
+            )
+        road_lines = _make_road_grid(12.49, 41.90, 12.50, 41.903)  # only segment 0
+
+        result = balance_segments(
+            segs, all_cells, resources=[Resource(type="cars", count=2)], road_lines=road_lines
+        )
+
+        assigned = {s.assigned_resource_type for s in result if s.searchable}
+        assert assigned <= {"cars"}
 
 
 class TestRestrictedSegmentFiltering:

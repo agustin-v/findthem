@@ -24,6 +24,10 @@ const SEGMENT_COLORS = [
   '#ec4899', // pink
 ] as const
 
+// Non-searchable segments (restricted / sub-minimum slivers) are inert, not
+// assignments — render them gray so they can't masquerade as a resource color.
+const UNSEARCHABLE_COLOR = '#9ca3af'
+
 interface UseSegmentLayerOptions {
   map: maplibregl.Map | null
   geojson: FeatureCollection | null
@@ -45,8 +49,10 @@ export function useSegmentLayer({ map, geojson }: UseSegmentLayerOptions) {
           properties: {
             ...f.properties,
             color:
-              RESOURCE_COLORS[f.properties?.assigned_resource_type as string] ??
-              SEGMENT_COLORS[(f.properties?.segment_id ?? 0) % SEGMENT_COLORS.length],
+              f.properties?.searchable === false
+                ? UNSEARCHABLE_COLOR
+                : (RESOURCE_COLORS[f.properties?.assigned_resource_type as string] ??
+                  SEGMENT_COLORS[(f.properties?.segment_id ?? 0) % SEGMENT_COLORS.length]),
           },
         })),
       }

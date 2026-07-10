@@ -1,6 +1,5 @@
 import json
 import time
-from pathlib import Path
 
 import pytest
 
@@ -59,3 +58,20 @@ class TestSetAndGetCached:
         monkeypatch.setattr("findthem_geo.cache.osm_cache.settings.osm_cache_ttl_hours", 24)
         set_cached("fresh_key", {"fresh": True})
         assert get_cached("fresh_key") == {"fresh": True}
+
+    def test_corrupt_json_returns_none_and_removes_file(self, tmp_cache_dir):
+        path = tmp_cache_dir / "bad_key.json"
+        path.write_text("{not valid json")
+
+        result = get_cached("bad_key")
+
+        assert result is None
+        assert not path.exists()
+
+    def test_missing_ts_field_returns_none(self, tmp_cache_dir):
+        path = tmp_cache_dir / "no_ts.json"
+        path.write_text(json.dumps({"payload": {"x": 1}}))
+
+        result = get_cached("no_ts")
+
+        assert result is None

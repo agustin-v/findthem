@@ -1,25 +1,22 @@
 import logging
 
 import networkx as nx
-from pyproj import Transformer
 from shapely.geometry import LineString, MultiLineString, Point, Polygon
-from shapely.ops import polygonize, unary_union
+from shapely.ops import polygonize, transform, unary_union
 
 from findthem_geo.config import settings
+from findthem_geo.services.geometry import area_km2, mercator_scale, to_meters, to_wgs84
 
 logger = logging.getLogger(__name__)
 
 
 def _make_search_boundary(lat: float, lng: float, radius_km: float) -> Polygon:
-    """Create a circular search boundary polygon in WGS84."""
-    # Project to meters, buffer, project back
-    to_meters = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-    to_wgs84 = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-
+    """Create a circular search boundary polygon in WGS84 with a *true* radius."""
     center_m = to_meters.transform(lng, lat)
-    circle_m = Point(center_m).buffer(radius_km * 1000, quad_segs=64)
-    coords_wgs84 = [to_wgs84.transform(x, y) for x, y in circle_m.exterior.coords]
-    return Polygon(coords_wgs84)
+    # EPSG:3857 metres are cos(lat) smaller than true metres — scale the buffer so the
+    # circle really spans radius_km on the ground at any latitude.
+    circle_m = Point(center_m).buffer(radius_km * 1000 * mercator_scale(lat), quad_segs=64)
+    return transform(to_wgs84.transform, circle_m)
 
 
 def _extract_road_lines(graph: nx.MultiDiGraph) -> list[LineString]:
@@ -79,9 +76,6 @@ def build_road_polygons(
     min_area_m2 = settings.min_segment_area_m2
     keep_fraction = settings.block_keep_fraction
 
-    # Project to meters for area check
-    to_meters = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-
     result = []
     for face in faces:
         if not isinstance(face, Polygon) or face.is_empty:
@@ -92,10 +86,7 @@ def build_road_polygons(
         # Keep the whole block only if the majority of it lies within the radius.
         if inside.area < keep_fraction * face.area:
             continue
-        # Check area in meters²
-        coords_m = [to_meters.transform(x, y) for x, y in face.exterior.coords]
-        area_m2 = Polygon(coords_m).area
-        if area_m2 < min_area_m2:
+        if area_km2(face) * 1e6 < min_area_m2:
             continue
         result.append(face)
 

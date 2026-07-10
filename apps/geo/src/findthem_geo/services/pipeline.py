@@ -1,17 +1,16 @@
 import logging
-import math
 import time
 
-from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import MultiPolygon, Point, Polygon, mapping
-from shapely.ops import unary_union
+from shapely.ops import transform, unary_union
 
 from findthem_geo.config import settings
 from findthem_geo.models.request import GenerateSegmentsRequest
 from findthem_geo.models.response import SegmentsResponse
-from findthem_geo.services.balancer import balance_segments, explode_multipolygons
+from findthem_geo.services.balancer import balance_segments
 from findthem_geo.services.gaps import apply_road_gaps
+from findthem_geo.services.geometry import distance_km, mercator_scale, to_meters, to_wgs84
 from findthem_geo.services.h3_grid import generate_h3_grid
 from findthem_geo.services.osm_fetcher import fetch_osm_data
 from findthem_geo.services.restriction import classify_cells
@@ -20,49 +19,24 @@ from findthem_geo.services.segmentation import assign_cells_to_segments
 
 logger = logging.getLogger(__name__)
 
-_to_meters = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-_to_wgs84 = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-
 
 def _inset_polygon(
     geom: Polygon | MultiPolygon, inset_m: float
 ) -> Polygon | MultiPolygon:
-    """Shrink a polygon by *inset_m* metres to create visual gaps between segments."""
+    """Shrink a polygon by *inset_m* true metres to create visual gaps."""
     if geom.is_empty or inset_m <= 0:
         return geom
 
-    # Project to metres
-    if isinstance(geom, MultiPolygon):
-        parts = list(geom.geoms)
-    else:
-        parts = [geom]
-
-    projected = []
-    for p in parts:
-        coords_m = [_to_meters.transform(x, y) for x, y in p.exterior.coords]
-        holes_m = [
-            [_to_meters.transform(x, y) for x, y in hole.coords]
-            for hole in p.interiors
-        ]
-        projected.append(Polygon(coords_m, holes_m))
-
-    merged = unary_union(projected)
-    buffered = merged.buffer(-inset_m)
+    merc = transform(to_meters.transform, geom)
+    buffered = merc.buffer(-inset_m * mercator_scale(geom.centroid.y))
 
     if buffered.is_empty:
         return geom  # Too small to inset — keep original
 
-    # If result is MultiPolygon, keep only the largest piece
     if isinstance(buffered, MultiPolygon):
         buffered = max(buffered.geoms, key=lambda p: p.area)
 
-    # Project back to WGS84
-    coords_wgs = [_to_wgs84.transform(x, y) for x, y in buffered.exterior.coords]
-    holes_wgs = [
-        [_to_wgs84.transform(x, y) for x, y in hole.coords]
-        for hole in buffered.interiors
-    ]
-    return Polygon(coords_wgs, holes_wgs)
+    return transform(to_wgs84.transform, buffered)
 
 
 def run_pipeline(req: GenerateSegmentsRequest) -> SegmentsResponse:
@@ -154,10 +128,6 @@ def run_pipeline(req: GenerateSegmentsRequest) -> SegmentsResponse:
             if not inset_poly.is_empty:
                 seg.polygon = inset_poly
 
-    # Contiguity guarantee: split any zone the merge/gap steps left as disconnected
-    # pieces into separate single-Polygon segments (a searcher's zone is never scattered).
-    segments = explode_multipolygons(segments, cells)
-
     # A segment with no areal geometry (degenerate split/gap result) cannot be searched
     # or ranked — mark it unsearchable so the loops below never hit an empty centroid.
     for seg in segments:
@@ -175,13 +145,11 @@ def run_pipeline(req: GenerateSegmentsRequest) -> SegmentsResponse:
             seg.estimated_hours = 0.0
 
     # --- LKP-distance priority ---
-    cx_m, cy_m = _to_meters.transform(req.center.lng, req.center.lat)
     searchable_segs = [s for s in segments if s.searchable]
     for seg in searchable_segs:
         centroid = seg.polygon.centroid
-        sx_m, sy_m = _to_meters.transform(centroid.x, centroid.y)
         seg.lkp_distance_km = round(
-            math.sqrt((sx_m - cx_m) ** 2 + (sy_m - cy_m) ** 2) / 1000.0, 4
+            distance_km(req.center.lng, req.center.lat, centroid.x, centroid.y), 4
         )
     searchable_segs.sort(key=lambda s: s.lkp_distance_km)
     for rank, seg in enumerate(searchable_segs, start=1):

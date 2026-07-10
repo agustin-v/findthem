@@ -1,8 +1,6 @@
 from unittest.mock import patch
 
-import networkx as nx
 import pytest
-from shapely.geometry import box
 
 from findthem_geo.services.osm_fetcher import OSMData
 

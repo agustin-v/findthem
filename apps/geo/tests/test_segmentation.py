@@ -1,8 +1,7 @@
 import h3
-import pytest
-from shapely.geometry import Polygon, box
+from shapely.geometry import box
 
-from findthem_geo.models.domain import H3Cell, Segment
+from findthem_geo.models.domain import H3Cell
 from findthem_geo.services.h3_grid import h3_cell_to_polygon
 from findthem_geo.services.segmentation import assign_cells_to_segments
 

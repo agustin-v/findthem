@@ -1,5 +1,4 @@
-import geopandas as gpd
-from shapely.geometry import Polygon
+from shapely import STRtree
 from shapely.ops import unary_union
 
 from findthem_geo.models.domain import H3Cell, RestrictedArea
@@ -23,19 +22,17 @@ def classify_cells(
     if not restricted_polys:
         return cells
 
-    restricted_union: Polygon = unary_union(restricted_polys)
-
-    cell_gdf = gpd.GeoDataFrame(
-        {"h3_index": [c.h3_index for c in cells]},
-        geometry=[c.polygon for c in cells],
-    )
+    tree = STRtree(restricted_polys)
 
     for i, cell in enumerate(cells):
         cell_poly = cell.polygon
-        if not cell_poly.intersects(restricted_union):
+        candidate_idxs = tree.query(cell_poly)
+        if len(candidate_idxs) == 0:
             continue
 
-        intersection = cell_poly.intersection(restricted_union)
+        # Union the overlapping candidates so stacked areas aren't double-counted.
+        blocker = unary_union([restricted_polys[j] for j in candidate_idxs])
+        intersection = cell_poly.intersection(blocker)
         if intersection.is_empty:
             continue
 

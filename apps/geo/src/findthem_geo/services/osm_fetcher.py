@@ -1,6 +1,7 @@
 import logging
 import socket
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import networkx as nx
@@ -366,13 +367,14 @@ def _fetch_restricted_areas(lat: float, lng: float, radius_m: float) -> list[Res
 
 
 def fetch_osm_data(lat: float, lng: float, radius_km: float) -> OSMData:
-    """Fetch road network and restricted areas for a given center + radius."""
+    """Fetch roads, restricted areas, and land use concurrently for center + radius."""
     radius_m = radius_km * 1000
-    road_graph = _fetch_road_graph(lat, lng, radius_m)
-    restricted_areas = _fetch_restricted_areas(lat, lng, radius_m)
-    land_use_areas = _fetch_land_use_areas(lat, lng, radius_m)
-    return OSMData(
-        road_graph=road_graph,
-        restricted_areas=restricted_areas,
-        land_use_areas=land_use_areas,
-    )
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_roads = pool.submit(_fetch_road_graph, lat, lng, radius_m)
+        f_restricted = pool.submit(_fetch_restricted_areas, lat, lng, radius_m)
+        f_land_use = pool.submit(_fetch_land_use_areas, lat, lng, radius_m)
+        return OSMData(
+            road_graph=f_roads.result(),
+            restricted_areas=f_restricted.result(),
+            land_use_areas=f_land_use.result(),
+        )

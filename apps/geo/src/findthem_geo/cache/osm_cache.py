@@ -28,16 +28,21 @@ def cache_key(lat: float, lng: float, radius_m: float, tag: str) -> str:
 
 
 def get_cached(key: str) -> Any | None:
-    """Return cached data if it exists and is within TTL, else None."""
+    """Return cached data if it exists, is readable, and is within TTL, else None."""
     path = _cache_dir() / f"{key}.json"
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
-    age_hours = (time.time() - data["ts"]) / 3600
+    try:
+        data = json.loads(path.read_text())
+        age_hours = (time.time() - data["ts"]) / 3600
+        payload = data["payload"]
+    except (ValueError, KeyError, TypeError, OSError):
+        path.unlink(missing_ok=True)  # corrupt entry — treat as a miss
+        return None
     if age_hours > settings.osm_cache_ttl_hours:
         path.unlink(missing_ok=True)
         return None
-    return data["payload"]
+    return payload
 
 
 def set_cached(key: str, payload: Any) -> None:

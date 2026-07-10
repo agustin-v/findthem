@@ -1,5 +1,4 @@
 import networkx as nx
-import pytest
 from shapely.geometry import LineString, Polygon
 
 from findthem_geo.services.road_polygons import (
@@ -32,6 +31,17 @@ class TestMakeSearchBoundary:
         center = Point(12.4964, 41.9028)
         assert poly.contains(center)
 
+    def test_boundary_radius_is_true_metres(self):
+        from pyproj import Geod
+
+        geod = Geod(ellps="WGS84")
+
+        poly = _make_search_boundary(52.35, 4.90, 1.0)
+
+        for x, y in list(poly.exterior.coords)[::16]:
+            _, _, dist_m = geod.inv(4.90, 52.35, x, y)
+            assert abs(dist_m - 1000.0) / 1000.0 < 0.02
+
 
 class TestExtractRoadLines:
     def test_extracts_lines_from_graph(self):
@@ -43,7 +53,7 @@ class TestExtractRoadLines:
         G.add_edge(2, 3)
         lines = _extract_road_lines(G)
         assert len(lines) == 2
-        assert all(isinstance(l, LineString) for l in lines)
+        assert all(isinstance(line, LineString) for line in lines)
 
     def test_uses_geometry_attribute_when_present(self):
         G = nx.MultiDiGraph()

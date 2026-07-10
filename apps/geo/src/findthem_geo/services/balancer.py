@@ -1,36 +1,21 @@
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 
-from pyproj import Transformer
 from shapely import STRtree
-from shapely.geometry import LineString, MultiPolygon, Polygon
+from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from findthem_geo.config import settings
 from findthem_geo.models.domain import H3Cell, Segment
 from findthem_geo.models.request import Resource
+from findthem_geo.services.geometry import area_km2 as _area_km2
+from findthem_geo.services.geometry import length_km as _length_km
 
 logger = logging.getLogger(__name__)
 
-_to_meters = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-
-
-def _area_km2(geom: Polygon | MultiPolygon) -> float:
-    """Compute approximate area in km² by projecting to EPSG:3857."""
-    if geom.is_empty:
-        return 0.0
-    if isinstance(geom, MultiPolygon):
-        return sum(_area_km2(p) for p in geom.geoms)
-    coords_m = [_to_meters.transform(x, y) for x, y in geom.exterior.coords]
-    return Polygon(coords_m).area / 1e6
-
-
-def _length_km(line: LineString) -> float:
-    """Compute approximate length in km by projecting to EPSG:3857."""
-    if line.is_empty:
-        return 0.0
-    coords_m = [_to_meters.transform(x, y) for x, y in line.coords]
-    return LineString(coords_m).length / 1000.0
+# A vehicle zone may absorb foot-only pockets up to this share of workload — the crew
+# parks and checks them on foot. Also the cutoff for re-homing small orphan parts.
+_DISMOUNT_SHARE = 0.25
 
 
 def _as_polygonal(
@@ -86,21 +71,17 @@ def _classify_accessibility(
             continue
         total_road_km = 0.0
         if tree is not None:
-            candidate_idxs = tree.query(seg.polygon)
-            for idx in candidate_idxs:
-                line = road_lines[idx]
+            pieces = []
+            for idx in tree.query(seg.polygon):
                 try:
-                    intersection = seg.polygon.intersection(line)
+                    intersection = seg.polygon.intersection(road_lines[idx])
                 except Exception:
                     continue
-                if intersection.is_empty:
-                    continue
-                if isinstance(intersection, LineString):
-                    total_road_km += _length_km(intersection)
-                elif hasattr(intersection, "geoms"):
-                    for geom in intersection.geoms:
-                        if isinstance(geom, LineString):
-                            total_road_km += _length_km(geom)
+                if not intersection.is_empty:
+                    pieces.append(intersection)
+            if pieces:
+                # One projected length for all pieces beats thousands of tiny calls.
+                total_road_km = _length_km(GeometryCollection(pieces))
         seg.road_density = total_road_km / area
         seg.vehicle_accessible = seg.road_density >= threshold
 
@@ -290,61 +271,6 @@ def balance_segments(
     return segments
 
 
-def explode_multipolygons(
-    segments: list[Segment], cells: list[H3Cell]
-) -> list[Segment]:
-    """Split any MultiPolygon segment into its connected parts (contiguity guarantee).
-
-    A searcher's zone must be a single connected area. Whatever the merge/gap steps
-    produced, this makes every returned segment a single Polygon: extra parts become
-    their own segments (same resource type), and sub-minimum sliver parts are dropped
-    (the largest part is always kept). Run this *after* the gap step.
-    """
-    min_area_km2 = settings.min_segment_area_m2 / 1e6
-    cell_map = {c.h3_index: c for c in cells}
-
-    out: list[Segment] = []
-    for seg in segments:
-        geom = seg.polygon
-        if geom.is_empty or not isinstance(geom, MultiPolygon):
-            out.append(seg)
-            continue
-        parts = sorted(
-            (p for p in geom.geoms if not p.is_empty), key=lambda p: p.area, reverse=True
-        )
-        if len(parts) <= 1:
-            if parts:
-                seg.polygon = parts[0]
-            out.append(seg)
-            continue
-        seg_cells = [cell_map[h] for h in seg.cells if h in cell_map]
-        for i, part in enumerate(parts):
-            area = _area_km2(part)
-            if i > 0 and area < min_area_km2:
-                continue  # drop tiny detached slivers (largest part always kept)
-            part_cells = [
-                c.h3_index for c in seg_cells if part.contains(c.polygon.centroid)
-            ]
-            new = Segment(segment_id=seg.segment_id, polygon=part, cells=part_cells)
-            new.assigned_resource_type = seg.assigned_resource_type
-            new.vehicle_accessible = seg.vehicle_accessible
-            new.road_density = seg.road_density
-            new.searchable = seg.searchable
-            new.total_area_km2 = area
-            new.workload = _compute_workload(new, cells)
-            new.effective_area_km2 = new.workload
-            out.append(new)
-
-    for i, seg in enumerate(out):
-        seg.segment_id = i
-    for seg in out:
-        for h3_idx in seg.cells:
-            cell = cell_map.get(h3_idx)
-            if cell:
-                cell.segment_id = seg.segment_id
-    return out
-
-
 def _assign_single_segment(
     segments: list[Segment], resources: list[Resource]
 ) -> None:
@@ -369,12 +295,13 @@ def _grow_zones(
     cells: list[H3Cell],
     resources: list[Resource],
 ) -> list[Segment]:
-    """Group road-bounded blocks into ≈one contiguous, speed-weighted zone per unit.
+    """Grow exactly one speed-weighted zone per resource unit over the block graph.
 
-    Each resource unit (a single person/car/…) gets one connected zone sized in
-    proportion to its search speed. Vehicle units only get vehicle-accessible zones.
-    Zones are grown block-by-block over the adjacency graph so they are always
-    contiguous — no scattered multi-patch segments.
+    Universal units (people/drones) seed *at* foot-only islands (parks, canal edges)
+    and grow outward into the surrounding streets, so a person gets a properly sized
+    area around the island rather than just the island. Vehicle units only ever claim
+    vehicle-accessible blocks. Unreached leftovers attach to the nearest compatible
+    zone, so the searchable count always equals the unit count (capped by blocks).
     """
     speed_map = settings.resource_speed_kmh
     vehicle_types = set(settings.vehicle_types)
@@ -387,175 +314,172 @@ def _grow_zones(
     if not units or not blocks:
         return blocks
 
-    vehicle_units = [u for u in units if u["vehicle"]]
-    foot_units = [u for u in units if not u["vehicle"]]
-    vehicle_blocks = [b for b in blocks if b.vehicle_accessible]
+    neighbors = _edge_neighbors(blocks)
+    by_id = {b.segment_id: b for b in blocks}
+    veh_ids = {b.segment_id for b in blocks if b.vehicle_accessible}
     foot_blocks = [b for b in blocks if not b.vehicle_accessible]
 
-    # Split the universal (foot) units between the two pools by workload share, but
-    # keep at least one unit in each non-empty pool and keep vehicle units off foot.
-    veh_wl = sum(b.workload for b in vehicle_blocks)
-    foot_wl = sum(b.workload for b in foot_blocks)
-    total_wl = veh_wl + foot_wl
+    vehicle_units = [u for u in units if u["vehicle"]]
+    universal_units = [u for u in units if not u["vehicle"]]
 
-    pools: list[tuple[list[Segment], list[dict]]] = []
-    if vehicle_blocks and foot_blocks:
-        n_foot = len(foot_units)
-        if total_wl > 0 and n_foot > 0:
-            want = round(foot_wl / total_wl * n_foot)
-        else:
-            want = n_foot
-        # Reserve a unit for the vehicle pool only if it has no dedicated vehicle units.
-        hi = n_foot if vehicle_units else max(0, n_foot - 1)
-        n_to_foot = max(1, min(want, hi)) if n_foot else 0
-        pools.append((foot_blocks, foot_units[:n_to_foot]))
-        pools.append((vehicle_blocks, vehicle_units + foot_units[n_to_foot:]))
-    elif vehicle_blocks:
-        pools.append((vehicle_blocks, units))  # no foot-only area — vehicles fine here
-    else:
-        # Only foot-only area exists — vehicle units cannot search it, fold to foot.
-        pools.append((foot_blocks, foot_units + vehicle_units))
+    # Vehicle units beyond the vehicle-accessible ground dismount and act universal.
+    n_veh = min(len(vehicle_units), len(veh_ids))
+    universal_units = universal_units + vehicle_units[n_veh:]
+    vehicle_units = vehicle_units[:n_veh]
+    n_uni = min(len(universal_units), len(blocks) - n_veh)
+    universal_units = sorted(universal_units, key=lambda u: u["speed"])[:n_uni]
 
-    result: list[Segment] = []
-    for pool_blocks, pool_units in pools:
-        if not pool_blocks:
-            continue
-        result.extend(_grow_pool(pool_blocks, cells, pool_units))
+    chosen = vehicle_units + universal_units
+    if not chosen:
+        return blocks
+    total_wl = sum(b.workload for b in blocks)
+    speed_sum = sum(u["speed"] for u in chosen) or 1.0
 
-    # Contiguity-first: every zone stays a single connected area. Geography (canals,
-    # parks, detached blocks) can force more zones than searchers — that is intended;
-    # the coordinator hands nearby zones to the same volunteer. No cross-gap merging.
-    return result
+    # --- Seeding ---
+    zone_specs: list[tuple[dict, Segment]] = []
+    taken: set[int] = set()
 
+    # Universal zones seed on the biggest foot islands first (fastest unit ↔ biggest
+    # island) — the person starts at the park/canal and grows into the streets.
+    foot_components = _connected_components(foot_blocks, neighbors) if foot_blocks else []
+    foot_components.sort(key=lambda c: sum(b.workload for b in c), reverse=True)
+    uni_by_speed = sorted(universal_units, key=lambda u: u["speed"], reverse=True)
+    for unit, comp in zip(uni_by_speed, foot_components):
+        seed = max(comp, key=lambda b: b.workload)
+        zone_specs.append((unit, seed))
+        taken.add(seed.segment_id)
 
-def _grow_pool(
-    blocks: list[Segment],
-    cells: list[H3Cell],
-    units: list[dict],
-) -> list[Segment]:
-    """Grow *blocks* into contiguous, speed-weighted zones — one per unit.
+    # Vehicle zones spread out over vehicle-accessible blocks.
+    seed_pts = [s.polygon.centroid for _, s in zone_specs]
+    veh_candidates = [by_id[i] for i in veh_ids if i not in taken]
+    for unit, seed in zip(vehicle_units, _pick_seeds(veh_candidates, len(vehicle_units), seed_pts)):
+        zone_specs.append((unit, seed))
+        taken.add(seed.segment_id)
+        seed_pts.append(seed.polygon.centroid)
 
-    Zones are grown **within connected components** (strict shared-edge adjacency), so
-    a zone can never be a scatter of disconnected patches. Scattered foot-only areas
-    (parks, low-density blocks) therefore yield one zone per isolated cluster rather
-    than a single map-spanning MultiPolygon.
-    """
-    accessible = blocks[0].vehicle_accessible if blocks else False
-    fallback_type = min(units, key=lambda u: u["speed"])["type"] if units else "people"
+    # Remaining universal units spread over whatever is left (any block type).
+    rest_units = uni_by_speed[len(foot_components):]
+    rest_candidates = [b for b in blocks if b.segment_id not in taken]
+    for unit, seed in zip(rest_units, _pick_seeds(rest_candidates, len(rest_units), seed_pts)):
+        zone_specs.append((unit, seed))
+        taken.add(seed.segment_id)
+        seed_pts.append(seed.polygon.centroid)
 
-    neighbors = _edge_neighbors(blocks)
-    components = _connected_components(blocks, neighbors)
-    comp_units = _allocate_units(components, units)
-
-    zones: list[Segment] = []
-    for comp, cu in zip(components, comp_units):
-        zones.extend(_grow_component(comp, cells, neighbors, cu, accessible, fallback_type))
-    return zones
-
-
-def _allocate_units(
-    components: list[list[Segment]], units: list[dict]
-) -> list[list[dict]]:
-    """Distribute *units* across connected components by workload (bigger → more, faster).
-
-    Each component gets at least one unit while units remain; if there are more
-    components than units, the largest components get one unit each and the rest get
-    none (they still become a single zone, typed by the fallback).
-    """
-    n = len(components)
-    if n == 0:
-        return []
-    wls = [sum(b.workload for b in c) for c in components]
-    order = sorted(range(n), key=lambda i: wls[i], reverse=True)  # largest first
-    total = sum(wls) or 1.0
-    u = len(units)
-
-    # Apportion units by workload share (largest-remainder). A big main component gets
-    # many units (→ many balanced zones); tiny isolated components get 0 units and each
-    # becomes a single fallback zone — never a giant blob and never a scatter.
-    ideal = [u * wls[i] / total for i in range(n)]
-    counts = [int(x) for x in ideal]
-    left = u - sum(counts)
-    frac_order = sorted(range(n), key=lambda i: ideal[i] - counts[i], reverse=True)
-    for i in range(left):
-        counts[frac_order[i]] += 1
-
-    # Cap a component's zone count at its block count.
-    counts = [min(counts[i], len(components[i])) for i in range(n)]
-
-    # Hand out the fastest units to the components getting the most zones.
-    fast_first = sorted(units, key=lambda x: x["speed"], reverse=True)
-    result: list[list[dict]] = [[] for _ in range(n)]
-    pos = 0
-    for i in order:
-        take = counts[i]
-        result[i] = fast_first[pos : pos + take]
-        pos += take
-    return result
-
-
-def _grow_component(
-    comp: list[Segment],
-    cells: list[H3Cell],
-    neighbors: dict[int, list[int]],
-    units: list[dict],
-    accessible: bool,
-    fallback_type: str,
-) -> list[Segment]:
-    """Region-grow one connected component into ``len(units)`` speed-weighted zones."""
-    k = min(len(units), len(comp))
-    if k <= 1:
-        zone = _merge_blocks(comp, cells, accessible)
-        zone.assigned_resource_type = units[0]["type"] if units else fallback_type
-        return [zone]
-
-    by_id = {b.segment_id: b for b in comp}
-    comp_ids = set(by_id)
-    used_units = sorted(units, key=lambda u: u["speed"])[:k]
-    seeds = _pick_seeds(comp, k)
-
-    total_wl = sum(b.workload for b in comp)
-    speed_sum = sum(u["speed"] for u in used_units) or 1.0
-    zones = [
-        {"blocks": [s], "wl": s.workload, "target": total_wl * used_units[i]["speed"] / speed_sum}
-        for i, s in enumerate(seeds)
-    ]
-    claimed = {s.segment_id for s in seeds}
-
-    # Hand the next block to the most under-target zone that can reach an unclaimed
-    # neighbour — every zone stays connected because it only ever grows into an edge
-    # neighbour of a block it already owns.
-    while len(claimed) < len(comp):
-        best_zone = None
-        best_block = None
-        best_deficit = float("-inf")
-        for z in zones:
-            frontier = {
-                nb
-                for b in z["blocks"]
-                for nb in neighbors.get(b.segment_id, [])
-                if nb in comp_ids and nb not in claimed
+    # --- Growth: most under-target zone claims its cheapest eligible frontier block ---
+    zones: list[dict] = []
+    claimed: set[int] = set(taken)
+    for unit, seed in zone_specs:
+        allow_foot = not unit["vehicle"]
+        zones.append(
+            {
+                "unit": unit,
+                "blocks": [seed],
+                "wl": seed.workload,
+                "target": total_wl * unit["speed"] / speed_sum,
+                "allow_foot": allow_foot,
+                "frontier": {
+                    nb
+                    for nb in neighbors.get(seed.segment_id, [])
+                    if nb not in claimed and (allow_foot or nb in veh_ids)
+                },
             }
-            if not frontier:
-                continue
-            deficit = z["target"] - z["wl"]
-            if deficit > best_deficit:
-                best_deficit = deficit
-                best_zone = z
-                best_block = min(frontier, key=lambda nid: by_id[nid].workload)
-        if best_zone is None:
-            break
-        b = by_id[best_block]
-        best_zone["blocks"].append(b)
-        best_zone["wl"] += b.workload
-        claimed.add(best_block)
+        )
 
-    result = [_merge_blocks(z["blocks"], cells, accessible) for z in zones]
-    # Assign types: fastest units to the largest zones (so cars get more ground).
-    result.sort(key=lambda s: s.workload)
-    for i, seg in enumerate(result):
-        unit = used_units[i] if i < len(used_units) else used_units[-1]
+    # Least-filled zone (wl relative to its speed target) grows next — absolute
+    # deficits would let fast units starve slow ones out of every block.
+    while len(claimed) < len(blocks):
+        best_i = -1
+        best_fill = float("inf")
+        for i, z in enumerate(zones):
+            if not z["frontier"]:
+                continue
+            fill = z["wl"] / z["target"] if z["target"] > 0 else float("inf")
+            if fill < best_fill:
+                best_fill = fill
+                best_i = i
+        if best_i < 0:
+            break
+        z = zones[best_i]
+        block_id = min(z["frontier"], key=lambda nid: by_id[nid].workload)
+        b = by_id[block_id]
+        z["blocks"].append(b)
+        z["wl"] += b.workload
+        claimed.add(block_id)
+        for other in zones:
+            other["frontier"].discard(block_id)
+        z["frontier"] |= {
+            nb
+            for nb in neighbors.get(block_id, [])
+            if nb not in claimed and (z["allow_foot"] or nb in veh_ids)
+        }
+
+    # --- Leftovers (unreachable components) attach to the nearest compatible zone ---
+    leftover = [by_id[i] for i in by_id if i not in claimed]
+    for comp in _connected_components(leftover, neighbors):
+        has_foot = any(not b.vehicle_accessible for b in comp)
+        cands = [z for z in zones if z["allow_foot"]] if has_foot else zones
+        cands = cands or zones
+        pt = comp[0].polygon.centroid
+        dst = min(cands, key=lambda z: min(pt.distance(b.polygon) for b in z["blocks"]))
+        dst["blocks"].extend(comp)
+        dst["wl"] += sum(b.workload for b in comp)
+
+    # --- Re-home orphans: a zone's detached component embedded in another zone's
+    # territory moves to an adjacent zone. Compatible neighbours first; a small foot
+    # pocket enclosed by a car zone merges anyway (the crew dismounts for it).
+    owner: dict[int, int] = {}
+    for zi, z in enumerate(zones):
+        for b in z["blocks"]:
+            owner[b.segment_id] = zi
+    mean_target = total_wl / max(1, len(zones))
+    for zi, z in enumerate(zones):
+        comps = _connected_components(z["blocks"], neighbors)
+        if len(comps) <= 1:
+            continue
+        comps.sort(key=lambda c: sum(b.workload for b in c), reverse=True)
+        for comp in comps[1:]:
+            comp_ids = {b.segment_id for b in comp}
+            adj = Counter(
+                owner[nb]
+                for bid in comp_ids
+                for nb in neighbors.get(bid, [])
+                if nb in owner and owner[nb] != zi and nb not in comp_ids
+            )
+            if not adj:
+                continue
+            comp_wl = sum(b.workload for b in comp)
+            has_foot = any(not b.vehicle_accessible for b in comp)
+            cand = [j for j in adj if zones[j]["allow_foot"]] if has_foot else list(adj)
+            if not cand and comp_wl <= _DISMOUNT_SHARE * mean_target:
+                cand = list(adj)
+            if not cand:
+                continue
+            dst_i = max(cand, key=lambda j: adj[j])  # most shared boundary wins
+            z["blocks"] = [b for b in z["blocks"] if b.segment_id not in comp_ids]
+            z["wl"] -= comp_wl
+            zones[dst_i]["blocks"].extend(comp)
+            zones[dst_i]["wl"] += comp_wl
+            for bid in comp_ids:
+                owner[bid] = dst_i
+
+    # --- Rebind: fastest compatible units to the largest zones (cars get more ground).
+    # "Mostly vehicle" (foot share ≤ dismount threshold) counts as car-compatible.
+    zones.sort(key=lambda z: z["wl"], reverse=True)
+    veh_left = sorted(vehicle_units, key=lambda u: u["speed"], reverse=True)
+    uni_left = sorted(universal_units, key=lambda u: u["speed"], reverse=True)
+    result: list[Segment] = []
+    for z in zones:
+        foot_wl = sum(b.workload for b in z["blocks"] if not b.vehicle_accessible)
+        mostly_vehicle = z["wl"] <= 0 or foot_wl / z["wl"] <= _DISMOUNT_SHARE
+        if mostly_vehicle and veh_left:
+            unit = veh_left.pop(0)
+        elif uni_left:
+            unit = uni_left.pop(0)
+        else:
+            unit = veh_left.pop(0)  # forced dismount — no universal units left
+        seg = _merge_blocks(z["blocks"], cells, mostly_vehicle)
         seg.assigned_resource_type = unit["type"]
+        result.append(seg)
     return result
 
 
@@ -597,7 +521,10 @@ def _edge_neighbors(blocks: list[Segment]) -> dict[int, list[int]]:
 def _connected_components(
     blocks: list[Segment], neighbors: dict[int, list[int]]
 ) -> list[list[Segment]]:
-    """Split blocks into connected components over the edge-adjacency graph."""
+    """Split blocks into connected components over the edge-adjacency graph.
+
+    ``neighbors`` may cover a superset of *blocks*; edges leading outside are ignored.
+    """
     by_id = {b.segment_id: b for b in blocks}
     seen: set[int] = set()
     components: list[list[Segment]] = []
@@ -611,28 +538,43 @@ def _connected_components(
             cur = stack.pop()
             comp.append(by_id[cur])
             for nb in neighbors.get(cur, []):
-                if nb not in seen:
+                if nb in by_id and nb not in seen:
                     seen.add(nb)
                     stack.append(nb)
         components.append(comp)
     return components
 
 
-def _pick_seeds(blocks: list[Segment], k: int) -> list[Segment]:
-    """Pick *k* spread-out seed blocks via farthest-point sampling on centroids."""
+def _pick_seeds(
+    blocks: list[Segment], k: int, avoid_pts: list | None = None
+) -> list[Segment]:
+    """Pick ≤*k* spread-out seed blocks via farthest-point sampling on centroids.
+
+    ``avoid_pts`` are centroids of already-placed seeds — new seeds spread away from
+    them too.
+    """
+    k = min(k, len(blocks))
+    if k <= 0:
+        return []
     pts = [(b.polygon.centroid.x, b.polygon.centroid.y) for b in blocks]
-    seeds = [max(range(len(blocks)), key=lambda i: blocks[i].workload)]
+    refs = [(p.x, p.y) for p in (avoid_pts or [])]
+    seeds: list[int] = []
+    if not refs:
+        first = max(range(len(blocks)), key=lambda i: blocks[i].workload)
+        seeds.append(first)
+        refs.append(pts[first])
     while len(seeds) < k:
         best_i = -1
         best_d = -1.0
         for i in range(len(blocks)):
             if i in seeds:
                 continue
-            d = min((pts[i][0] - pts[s][0]) ** 2 + (pts[i][1] - pts[s][1]) ** 2 for s in seeds)
+            d = min((pts[i][0] - r[0]) ** 2 + (pts[i][1] - r[1]) ** 2 for r in refs)
             if d > best_d:
                 best_d = d
                 best_i = i
         seeds.append(best_i)
+        refs.append(pts[best_i])
     return [blocks[i] for i in seeds]
 
 

@@ -213,7 +213,6 @@ class TestGraphCacheRoundtrip:
         G.add_edge(0, 1, highway="residential")
 
         call_count = 0
-        original_graph_from_point = None
 
         def mock_graph_from_point(*args, **kwargs):
             nonlocal call_count

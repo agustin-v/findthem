@@ -1,6 +1,5 @@
 import h3
-import pytest
-from shapely.geometry import Polygon, box
+from shapely.geometry import box
 
 from findthem_geo.models.domain import H3Cell, RestrictedArea
 from findthem_geo.services.h3_grid import h3_cell_to_polygon

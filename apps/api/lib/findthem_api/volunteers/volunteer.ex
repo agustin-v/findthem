@@ -43,6 +43,8 @@ defmodule FindThemApi.Volunteers.Volunteer do
       :removed_at
     ])
     |> validate_required([:search_id, :name, :phone])
+    |> validate_length(:name, max: 200)
+    |> validate_length(:phone, max: 32)
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:resource_type, @resource_types)
     |> foreign_key_constraint(:search_id)

@@ -22,6 +22,15 @@ defmodule FindThemApi.Searches do
     Ecto.Query.CastError -> {:error, :not_found}
   end
 
+  # Single query, single branch — a bad token and a token for a non-active
+  # search look identical to the caller, so neither leaks which is which.
+  def get_by_join_token(token) do
+    case Repo.get_by(Search, join_token: token, status: "active") do
+      nil -> {:error, :not_found}
+      search -> {:ok, search}
+    end
+  end
+
   def create_search(owner_id, attrs) do
     attrs =
       attrs

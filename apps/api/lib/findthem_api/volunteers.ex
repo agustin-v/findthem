@@ -13,9 +13,9 @@ defmodule FindThemApi.Volunteers do
   def join_volunteer(search_id, attrs) do
     attrs =
       attrs
-      |> Map.new()
-      |> Map.put(:search_id, search_id)
-      |> Map.put_new(:joined_at, DateTime.utc_now() |> DateTime.truncate(:second))
+      |> Map.new(fn {k, v} -> {to_string(k), v} end)
+      |> Map.put("search_id", search_id)
+      |> Map.put_new("joined_at", DateTime.utc_now() |> DateTime.truncate(:second))
 
     %Volunteer{}
     |> Volunteer.changeset(attrs)

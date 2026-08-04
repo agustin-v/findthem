@@ -52,6 +52,7 @@ defmodule FindThemApi.MixProject do
       {:joken, "~> 2.6"},
       {:req, "~> 0.5"},
       {:cors_plug, "~> 3.0"},
+      {:hammer, "~> 7.0"},
       {:bypass, "~> 2.1", only: :test}
     ]
   end

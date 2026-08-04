@@ -29,4 +29,15 @@ defmodule FindThemApi.VolunteersTest do
     assert_receive {:volunteer_joined, %{id: id}}
     assert id == volunteer.id
   end
+
+  test "join_volunteer/2 rejects an oversized name or phone", %{search: search} do
+    {:error, changeset} =
+      Volunteers.join_volunteer(search.id, %{
+        name: String.duplicate("a", 201),
+        phone: String.duplicate("1", 33)
+      })
+
+    assert "should be at most 200 character(s)" in errors_on(changeset).name
+    assert "should be at most 32 character(s)" in errors_on(changeset).phone
+  end
 end

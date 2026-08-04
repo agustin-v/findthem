@@ -9,10 +9,21 @@ defmodule FindThemApiWeb.Router do
     plug FindThemApiWeb.Plugs.ClerkAuth
   end
 
+  pipeline :join_rate_limited do
+    plug FindThemApiWeb.Plugs.RateLimit, bucket: "join"
+  end
+
   scope "/", FindThemApiWeb do
     pipe_through :api
 
     get "/health", HealthController, :index
+  end
+
+  scope "/", FindThemApiWeb do
+    pipe_through [:api, :join_rate_limited]
+
+    get "/join/:code/preview", JoinController, :preview
+    post "/join", JoinController, :create
   end
 
   scope "/api", FindThemApiWeb do

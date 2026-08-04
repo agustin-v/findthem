@@ -12,6 +12,7 @@ defmodule FindThemApi.Application do
       FindThemApi.Repo,
       {DNSCluster, query: Application.get_env(:findthem_api, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: FindThemApi.PubSub},
+      FindThemApi.RateLimit,
       # Start a worker by calling: FindThemApi.Worker.start_link(arg)
       # {FindThemApi.Worker, arg},
       # Start to serve requests, typically the last entry

@@ -105,4 +105,37 @@ defmodule FindThemApi.SearchesTest do
     assert aggregates.approved_counts == %{}
     assert aggregates.rebalance_suggested == false
   end
+
+  test "get_by_join_token/1 returns the search for a valid token on an active search", %{
+    owner: owner
+  } do
+    {:ok, search} =
+      Searches.create_search(owner.id, %{
+        subject_type: "person",
+        subject_name: "Marco Rossi",
+        contact_phone: "+390612345"
+      })
+
+    assert {:ok, found} = Searches.get_by_join_token(search.join_token)
+    assert found.id == search.id
+  end
+
+  test "get_by_join_token/1 returns :not_found for an unknown token", %{owner: _owner} do
+    assert {:error, :not_found} = Searches.get_by_join_token("nonexistent-token")
+  end
+
+  test "get_by_join_token/1 returns :not_found for a token on a non-active search", %{
+    owner: owner
+  } do
+    {:ok, search} =
+      Searches.create_search(owner.id, %{
+        subject_type: "person",
+        subject_name: "Marco Rossi",
+        contact_phone: "+390612345"
+      })
+
+    {:ok, closed} = Searches.update_search(search, %{status: "resolved"})
+
+    assert {:error, :not_found} = Searches.get_by_join_token(closed.join_token)
+  end
 end

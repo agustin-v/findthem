@@ -60,6 +60,33 @@ defmodule FindThemApi.Searches do
     |> broadcast(:search_updated)
   end
 
+  # Retried once on a join_token collision (astronomically unlikely — 40 bits
+  # of CSPRNG entropy — but cheap to guard, matching Zones.upsert_zone's
+  # retry-once pattern for its own unique-constraint race).
+  #
+  # Known, accepted tradeoff: two concurrent rotate calls (e.g. a
+  # double-clicked "Rotate" button) both succeed, serialized by Postgres —
+  # whichever commits last wins, and the HTTP response returned to the
+  # earlier caller can already be stale by the time it's read. This doesn't
+  # corrupt data (single-field blind overwrite, not a multi-field lost
+  # update) and locking the row wouldn't fix the stale-response race anyway
+  # since it's a response-ordering issue, not a consistency one. Worth an
+  # idempotency-key design if this ever matters in practice; not needed for
+  # a low-frequency coordinator action today.
+  def rotate_join_token(%Search{} = search, retry? \\ true) do
+    case update_search(search, %{"join_token" => generate_join_token()}) do
+      {:error, %Ecto.Changeset{} = changeset} = error ->
+        if retry? and Keyword.has_key?(changeset.errors, :join_token) do
+          rotate_join_token(search, false)
+        else
+          error
+        end
+
+      result ->
+        result
+    end
+  end
+
   def latest_generation(search_id) do
     Repo.one(
       from(g in Generation,

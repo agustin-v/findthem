@@ -165,4 +165,20 @@ defmodule FindThemApi.SearchesTest do
   test "get_search/1 returns :not_found for a garbage id instead of raising" do
     assert {:error, :not_found} = Searches.get_search("not-a-uuid")
   end
+
+  test "rotate_join_token/1 replaces the join_token, invalidating the old one", %{owner: owner} do
+    {:ok, search} =
+      Searches.create_search(owner.id, %{
+        subject_type: "person",
+        subject_name: "Marco Rossi",
+        contact_phone: "+390612345"
+      })
+
+    old_token = search.join_token
+    {:ok, rotated} = Searches.rotate_join_token(search)
+
+    assert rotated.join_token != old_token
+    assert {:error, :not_found} = Searches.get_by_join_token(old_token)
+    assert {:ok, _} = Searches.get_by_join_token(rotated.join_token)
+  end
 end

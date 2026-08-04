@@ -2,6 +2,7 @@ defmodule FindThemApi.Volunteers do
   import Ecto.Query
 
   alias FindThemApi.Repo
+  alias FindThemApi.Searches.Zone
   alias FindThemApi.Volunteers.Volunteer
 
   @token_salt "volunteer"
@@ -10,6 +11,7 @@ defmodule FindThemApi.Volunteers do
   def list_by_search(search_id) do
     Volunteer
     |> where(search_id: ^search_id)
+    |> order_by(asc: :joined_at)
     |> Repo.all()
   end
 
@@ -18,6 +20,55 @@ defmodule FindThemApi.Volunteers do
   rescue
     Ecto.Query.CastError -> nil
   end
+
+  # Scoped by BOTH search_id and id — a real volunteer id from a different
+  # search must not be reachable through a foreign search_id in the path.
+  def get_volunteer_in_search(search_id, id) do
+    case Repo.get_by(Volunteer, id: id, search_id: search_id) do
+      nil -> {:error, :not_found}
+      volunteer -> {:ok, volunteer}
+    end
+  rescue
+    Ecto.Query.CastError -> {:error, :not_found}
+  end
+
+  def list_by_search_with_stats(search_id) do
+    zone_counts =
+      from(z in Zone,
+        where:
+          z.search_id == ^search_id and z.status == "searched" and
+            not is_nil(z.searched_by_volunteer_id),
+        group_by: z.searched_by_volunteer_id,
+        select: {z.searched_by_volunteer_id, count()}
+      )
+      |> Repo.all()
+      |> Map.new()
+
+    search_id
+    |> list_by_search()
+    |> Enum.map(fn volunteer -> {volunteer, Map.get(zone_counts, volunteer.id, 0)} end)
+  end
+
+  # Deliberately no state-machine guard: any transition between "approved"
+  # and "removed" is allowed unconditionally (including re-approving an
+  # already-removed volunteer, or re-stamping an already-approved one) —
+  # this lets a coordinator undo a mistaken removal/approval with the same
+  # action rather than needing a separate "restore" endpoint.
+  def set_status(%Volunteer{} = volunteer, "approved") do
+    update_volunteer(volunteer, %{
+      "status" => "approved",
+      "approved_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+    })
+  end
+
+  def set_status(%Volunteer{} = volunteer, "removed") do
+    update_volunteer(volunteer, %{
+      "status" => "removed",
+      "removed_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+    })
+  end
+
+  def set_status(%Volunteer{}, _invalid), do: {:error, :invalid_status}
 
   def sign_token(conn_or_endpoint, volunteer_id) do
     Phoenix.Token.sign(conn_or_endpoint, @token_salt, volunteer_id, max_age: @token_max_age)

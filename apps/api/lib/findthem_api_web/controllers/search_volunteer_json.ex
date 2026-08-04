@@ -1,0 +1,31 @@
+defmodule FindThemApiWeb.SearchVolunteerJSON do
+  def index(%{volunteers: volunteers}) do
+    %{data: Enum.map(volunteers, &data/1)}
+  end
+
+  def show(%{volunteer: volunteer}) do
+    %{data: data(volunteer)}
+  end
+
+  defp data({%FindThemApi.Volunteers.Volunteer{} = volunteer, zones_searched}) do
+    volunteer |> base() |> Map.put(:zones_searched, zones_searched)
+  end
+
+  defp data(%FindThemApi.Volunteers.Volunteer{} = volunteer) do
+    volunteer |> base() |> Map.put(:zones_searched, nil)
+  end
+
+  defp base(volunteer) do
+    %{
+      id: volunteer.id,
+      name: volunteer.name,
+      phone: volunteer.phone,
+      resource_type: volunteer.resource_type,
+      status: volunteer.status,
+      last_active_at: volunteer.last_active_at,
+      joined_at: volunteer.joined_at,
+      approved_at: volunteer.approved_at,
+      removed_at: volunteer.removed_at
+    }
+  end
+end

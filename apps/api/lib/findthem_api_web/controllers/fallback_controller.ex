@@ -14,4 +14,10 @@ defmodule FindThemApiWeb.FallbackController do
     |> put_view(json: FindThemApiWeb.ErrorJSON)
     |> render(:"404")
   end
+
+  def call(conn, {:error, :invalid_status}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{status: ["must be approved or removed"]}})
+  end
 end

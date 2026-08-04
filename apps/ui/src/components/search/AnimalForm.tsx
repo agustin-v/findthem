@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { ImageUploader } from '@/components/search/ImageUploader'
 import { LocationPicker, type LocationValue } from '@/components/shared/LocationPicker'
 import { animalSchema, type AnimalData } from '@/lib/schemas'
+import { nowForDateTimeLocal } from '@/lib/utils'
 
 interface AnimalFormProps {
   defaultValues?: Partial<AnimalData>
@@ -34,7 +35,7 @@ export function AnimalForm({ defaultValues, onSubmit, onBack }: AnimalFormProps)
   const lastSeenCoords = watch('lastSeenCoords')
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3">
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <Label className="text-[13px]">
           {t('fields.photos')}{' '}
@@ -106,16 +107,33 @@ export function AnimalForm({ defaultValues, onSubmit, onBack }: AnimalFormProps)
       </div>
 
       <div className="flex flex-col gap-1.5">
+        <Label htmlFor="animal-phone" className="text-[13px]">{t('fields.contactPhone')}</Label>
+        <Input
+          id="animal-phone"
+          type="tel"
+          className="h-11"
+          placeholder={t('placeholders.contactPhone')}
+          {...register('contactPhone')}
+        />
+        {errors.contactPhone && (
+          <p className="mt-0.5 text-[13px] text-destructive">{t('errors.contactPhoneRequired')}</p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
         <Label htmlFor="animal-lastseen" className="text-[13px]">{t('fields.lastSeenAt')}</Label>
         <Input
           id="animal-lastseen"
           type="datetime-local"
           className="h-11"
+          max={nowForDateTimeLocal()}
           {...register('lastSeenAt')}
         />
         {errors.lastSeenAt && (
           <p className="mt-0.5 text-[13px] text-destructive">
-            {t('errors.lastSeenRequired')}
+            {errors.lastSeenAt.message === 'future'
+              ? t('errors.lastSeenFuture')
+              : t('errors.lastSeenRequired')}
           </p>
         )}
       </div>
@@ -136,8 +154,15 @@ export function AnimalForm({ defaultValues, onSubmit, onBack }: AnimalFormProps)
                 field.onChange(loc.address)
                 setValue('lastSeenCoords', { lat: loc.lat, lng: loc.lng })
               }}
+              onInputChange={field.onChange}
               placeholder={t('placeholders.lastSeenLocation')}
-              error={errors.lastSeenLocation ? t('errors.locationMin') : undefined}
+              error={
+                errors.lastSeenLocation
+                  ? t('errors.locationMin')
+                  : errors.lastSeenCoords
+                    ? t('errors.locationRequired')
+                    : undefined
+              }
             />
           )}
         />

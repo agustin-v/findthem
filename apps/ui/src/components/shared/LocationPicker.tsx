@@ -16,6 +16,10 @@ export interface LocationValue {
 interface LocationPickerProps {
   value: LocationValue | null
   onChange: (value: LocationValue) => void
+  /** Fired on every keystroke, before a suggestion is picked — keeps the
+   *  address text in sync with the form even though coordinates aren't
+   *  known yet (only a selected suggestion or dragged marker sets those). */
+  onInputChange?: (address: string) => void
   placeholder?: string
   error?: string
 }
@@ -23,6 +27,7 @@ interface LocationPickerProps {
 export function LocationPicker({
   value,
   onChange,
+  onInputChange,
   placeholder,
   error,
 }: LocationPickerProps) {
@@ -128,6 +133,7 @@ export function LocationPicker({
           onChange={(e) => {
             setInputValue(e.target.value)
             setShowDropdown(true)
+            onInputChange?.(e.target.value)
           }}
           onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
         />

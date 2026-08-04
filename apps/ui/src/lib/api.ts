@@ -83,14 +83,14 @@ const OMIT_FROM_SUBJECT_DETAILS = new Set([
   'subjectType',
   'resources',
   'photos',
-  'phone',
+  'contactPhone',
   'lastSeenLocation',
   'lastSeenAt',
   'lastSeenCoords',
 ])
 
 function buildCreatePayload(data: CreateSearchInput) {
-  const { subjectType, name, phone, lastSeenLocation, lastSeenAt, lastSeenCoords } = data
+  const { subjectType, name, contactPhone, lastSeenLocation, lastSeenAt, lastSeenCoords } = data
   const coords = lastSeenCoords as { lat: number; lng: number } | undefined
   const rest = Object.fromEntries(
     Object.entries(data).filter(([key]) => !OMIT_FROM_SUBJECT_DETAILS.has(key)),
@@ -104,7 +104,7 @@ function buildCreatePayload(data: CreateSearchInput) {
       subject_type: subjectType,
       subject_name: subjectName,
       subject_details: rest,
-      contact_phone: (phone as string) ?? '',
+      contact_phone: (contactPhone as string) ?? '',
       lkp_address: (lastSeenLocation as string) ?? undefined,
       lkp_at: lastSeenAt ? new Date(lastSeenAt as string).toISOString() : undefined,
       lkp_lat: coords?.lat,

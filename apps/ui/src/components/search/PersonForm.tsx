@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { ImageUploader } from '@/components/search/ImageUploader'
 import { LocationPicker, type LocationValue } from '@/components/shared/LocationPicker'
 import { personSchema, type PersonData } from '@/lib/schemas'
+import { nowForDateTimeLocal } from '@/lib/utils'
 
 interface PersonFormProps {
   defaultValues?: Partial<PersonData>
@@ -34,7 +35,7 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
   const lastSeenCoords = watch('lastSeenCoords')
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3">
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <Label className="text-[13px]">
           {t('fields.photos')}{' '}
@@ -82,6 +83,33 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
         )}
       </div>
 
+      <div className="flex gap-3">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <Label htmlFor="person-height" className="text-[13px]">
+            {t('fields.height')}{' '}
+            <span className="text-muted-foreground">({t('optional')})</span>
+          </Label>
+          <Input
+            id="person-height"
+            className="h-11"
+            placeholder={t('placeholders.height')}
+            {...register('height')}
+          />
+        </div>
+        <div className="flex flex-1 flex-col gap-1.5">
+          <Label htmlFor="person-weight" className="text-[13px]">
+            {t('fields.weight')}{' '}
+            <span className="text-muted-foreground">({t('optional')})</span>
+          </Label>
+          <Input
+            id="person-weight"
+            className="h-11"
+            placeholder={t('placeholders.weight')}
+            {...register('weight')}
+          />
+        </div>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="person-desc" className="text-[13px]">{t('fields.physicalDescription')}</Label>
         <Textarea
@@ -97,6 +125,18 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
       </div>
 
       <div className="flex flex-col gap-1.5">
+        <Label htmlFor="person-general-desc" className="text-[13px]">
+          {t('fields.generalDescription')}{' '}
+          <span className="text-muted-foreground">({t('optional')})</span>
+        </Label>
+        <Textarea
+          id="person-general-desc"
+          placeholder={t('placeholders.generalDescription')}
+          {...register('generalDescription')}
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
         <Label htmlFor="person-health" className="text-[13px]">
           {t('fields.healthNotes')}{' '}
           <span className="text-muted-foreground">({t('optional')})</span>
@@ -109,19 +149,16 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="person-phone" className="text-[13px]">
-          {t('fields.phone')}{' '}
-          <span className="text-muted-foreground">({t('optional')})</span>
-        </Label>
+        <Label htmlFor="person-phone" className="text-[13px]">{t('fields.contactPhone')}</Label>
         <Input
           id="person-phone"
           type="tel"
           className="h-11"
-          placeholder={t('placeholders.phone')}
-          {...register('phone')}
+          placeholder={t('placeholders.contactPhone')}
+          {...register('contactPhone')}
         />
-        {errors.phone && (
-          <p className="mt-0.5 text-[13px] text-destructive">{t('errors.phoneInvalid')}</p>
+        {errors.contactPhone && (
+          <p className="mt-0.5 text-[13px] text-destructive">{t('errors.contactPhoneRequired')}</p>
         )}
       </div>
 
@@ -131,11 +168,14 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
           id="person-lastseen"
           type="datetime-local"
           className="h-11"
+          max={nowForDateTimeLocal()}
           {...register('lastSeenAt')}
         />
         {errors.lastSeenAt && (
           <p className="mt-0.5 text-[13px] text-destructive">
-            {t('errors.lastSeenRequired')}
+            {errors.lastSeenAt.message === 'future'
+              ? t('errors.lastSeenFuture')
+              : t('errors.lastSeenRequired')}
           </p>
         )}
       </div>
@@ -156,8 +196,15 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
                 field.onChange(loc.address)
                 setValue('lastSeenCoords', { lat: loc.lat, lng: loc.lng })
               }}
+              onInputChange={field.onChange}
               placeholder={t('placeholders.lastSeenLocation')}
-              error={errors.lastSeenLocation ? t('errors.locationMin') : undefined}
+              error={
+                errors.lastSeenLocation
+                  ? t('errors.locationMin')
+                  : errors.lastSeenCoords
+                    ? t('errors.locationRequired')
+                    : undefined
+              }
             />
           )}
         />

@@ -31,8 +31,10 @@ describe('useSearchCreationStore', () => {
       name: 'Marco',
       age: 72,
       physicalDescription: 'Tall',
+      contactPhone: '+390612345678',
       lastSeenAt: '2026-05-07T14:30:00Z',
       lastSeenLocation: 'Via del Corso',
+      lastSeenCoords: { lat: 41.9028, lng: 12.4964 },
     }
     getState().setFormData(data)
     expect(getState().formData).toEqual(data)

@@ -65,12 +65,15 @@ function PersonReview({ data }: { data: PersonData }) {
       <PhotosRow photos={data.photos} />
       <ReviewRow label={t('fields.name')} value={data.name} />
       <ReviewRow label={t('fields.age')} value={String(data.age)} />
+      <ReviewRow label={t('fields.height')} value={data.height} />
+      <ReviewRow label={t('fields.weight')} value={data.weight} />
       <ReviewRow
         label={t('fields.physicalDescription')}
         value={data.physicalDescription}
       />
+      <ReviewRow label={t('fields.generalDescription')} value={data.generalDescription} />
       <ReviewRow label={t('fields.healthNotes')} value={data.healthNotes} />
-      <ReviewRow label={t('fields.phone')} value={data.phone} />
+      <ReviewRow label={t('fields.contactPhone')} value={data.contactPhone} />
       <ReviewRow label={t('fields.lastSeenAt')} value={data.lastSeenAt} />
       <ReviewRow
         label={t('fields.lastSeenLocation')}
@@ -99,6 +102,7 @@ function AnimalReview({ data }: { data: AnimalData }) {
         value={data.behaviourNotes}
       />
       <ReviewRow label={t('fields.microchip')} value={data.microchip} />
+      <ReviewRow label={t('fields.contactPhone')} value={data.contactPhone} />
       <ReviewRow label={t('fields.lastSeenAt')} value={data.lastSeenAt} />
       <ReviewRow
         label={t('fields.lastSeenLocation')}
@@ -122,6 +126,7 @@ function ObjectReview({ data }: { data: ObjectData }) {
         label={t('fields.lastKnownState')}
         value={data.lastKnownState}
       />
+      <ReviewRow label={t('fields.contactPhone')} value={data.contactPhone} />
       <ReviewRow label={t('fields.lastSeenAt')} value={data.lastSeenAt} />
       <ReviewRow
         label={t('fields.lastSeenLocation')}

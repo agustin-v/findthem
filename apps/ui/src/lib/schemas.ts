@@ -20,20 +20,26 @@ export const signupSchema = z
 export const coordsSchema = z.object({ lat: z.number(), lng: z.number() })
 export type Coords = z.infer<typeof coordsSchema>
 
+const contactPhoneSchema = z.string().regex(/^\+?[1-9]\d{1,14}$/, 'required')
+
+const lastSeenAtSchema = z
+  .string()
+  .min(1, 'required')
+  .refine((val) => new Date(val).getTime() <= Date.now(), { message: 'future' })
+
 export const personSchema = z.object({
   photos: z.array(z.instanceof(File)).max(5).optional(),
   name: z.string().min(2).max(100),
   age: z.number().int().min(0).max(120),
+  height: z.string().max(20).optional(),
+  weight: z.string().max(20).optional(),
   physicalDescription: z.string().min(2).max(500),
+  generalDescription: z.string().max(500).optional(),
   healthNotes: z.string().optional(),
-  phone: z
-    .string()
-    .regex(/^\+?[1-9]\d{1,14}$/)
-    .optional()
-    .or(z.literal('')),
-  lastSeenAt: z.string().min(1, 'Required'),
+  contactPhone: contactPhoneSchema,
+  lastSeenAt: lastSeenAtSchema,
   lastSeenLocation: z.string().min(3).max(200),
-  lastSeenCoords: coordsSchema.optional(),
+  lastSeenCoords: coordsSchema,
   intendedDestination: z.string().optional(),
 })
 
@@ -43,9 +49,10 @@ export const animalSchema = z.object({
   name: z.string().optional(),
   behaviourNotes: z.string().optional(),
   microchip: z.string().optional(),
-  lastSeenAt: z.string().min(1, 'Required'),
+  contactPhone: contactPhoneSchema,
+  lastSeenAt: lastSeenAtSchema,
   lastSeenLocation: z.string().min(3).max(200),
-  lastSeenCoords: coordsSchema.optional(),
+  lastSeenCoords: coordsSchema,
 })
 
 export const objectSchema = z.object({
@@ -53,9 +60,10 @@ export const objectSchema = z.object({
   description: z.string().min(2).max(200),
   sizeWeight: z.string().optional(),
   lastKnownState: z.string().optional(),
-  lastSeenAt: z.string().min(1, 'Required'),
+  contactPhone: contactPhoneSchema,
+  lastSeenAt: lastSeenAtSchema,
   lastSeenLocation: z.string().min(3).max(200),
-  lastSeenCoords: coordsSchema.optional(),
+  lastSeenCoords: coordsSchema,
 })
 
 export type LoginData = z.infer<typeof loginSchema>

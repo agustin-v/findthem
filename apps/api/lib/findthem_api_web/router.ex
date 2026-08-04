@@ -5,6 +5,10 @@ defmodule FindThemApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :authenticated do
+    plug FindThemApiWeb.Plugs.ClerkAuth
+  end
+
   scope "/", FindThemApiWeb do
     pipe_through :api
 
@@ -12,7 +16,9 @@ defmodule FindThemApiWeb.Router do
   end
 
   scope "/api", FindThemApiWeb do
-    pipe_through :api
+    pipe_through [:api, :authenticated]
+
+    get "/me", MeController, :show
   end
 
   # Enable LiveDashboard in development

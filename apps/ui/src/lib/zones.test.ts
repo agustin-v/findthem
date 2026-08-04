@@ -65,6 +65,18 @@ describe('zonesToGeoJSON', () => {
     expect(first[0]).toBe(last[0])
     expect(first[1]).toBe(last[1])
   })
+
+  it('skips a zone with a malformed h3Index instead of throwing', () => {
+    const zones: Zone[] = [
+      { h3Index: 'ffffffffffffffff', status: 'not_assigned' },
+      { h3Index: '891f1d48177ffff', status: 'assigned' },
+    ]
+
+    const geojson = zonesToGeoJSON(zones)
+
+    expect(geojson.features).toHaveLength(1)
+    expect(geojson.features[0].properties?.h3Index).toBe('891f1d48177ffff')
+  })
 })
 
 describe('ZONE_STATUS_CYCLE', () => {

@@ -10,6 +10,7 @@ export const mockSegmentsResponse = {
         properties: {
           segment_id: 0,
           cell_count: 5,
+          cells: ['891f1d48177ffff', '891f1d48178ffff'],
           total_area_km2: 0.42,
           effective_area_km2: 0.38,
           workload: 0.38,
@@ -40,6 +41,7 @@ export const mockSegmentsResponse = {
         properties: {
           segment_id: 1,
           cell_count: 4,
+          cells: ['891f1d4816bffff'],
           total_area_km2: 0.35,
           effective_area_km2: 0.30,
           workload: 0.30,

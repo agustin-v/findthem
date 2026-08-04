@@ -20,4 +20,12 @@ defmodule FindThemApiWeb.FallbackController do
     |> put_status(:unprocessable_entity)
     |> json(%{errors: %{status: ["must be approved or removed"]}})
   end
+
+  def call(conn, {:error, :invalid_cells}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      errors: %{cells: ["each entry must have a 15-character hex h3_index and a segment_id"]}
+    })
+  end
 end

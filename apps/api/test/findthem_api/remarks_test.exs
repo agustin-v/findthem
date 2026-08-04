@@ -97,4 +97,33 @@ defmodule FindThemApi.RemarksTest do
 
     assert length(Remarks.list_by_search(search.id)) == 1
   end
+
+  test "create_remark/2 rejects an out-of-range lat/lng instead of crashing", %{search: search} do
+    {:error, changeset} =
+      Remarks.create_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        kind: "sighting",
+        lat: 999.0,
+        lng: -999.0,
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    assert "must be less than or equal to 90" in errors_on(changeset).lat
+    assert "must be greater than or equal to -180" in errors_on(changeset).lng
+  end
+
+  test "create_remark/2 rejects an oversized kind/text instead of hitting the DB column limit", %{
+    search: search
+  } do
+    {:error, changeset} =
+      Remarks.create_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        kind: String.duplicate("a", 101),
+        text: String.duplicate("b", 256),
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    assert "should be at most 100 character(s)" in errors_on(changeset).kind
+    assert "should be at most 255 character(s)" in errors_on(changeset).text
+  end
 end

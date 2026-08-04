@@ -1,10 +1,13 @@
 import {
   ApiError,
+  createRemark,
   getJoinPreview,
+  getVolunteerSearch,
   getVolunteerSession,
   isAuthError,
   isNotFoundError,
   joinSearch,
+  updateZoneStatus,
 } from './api';
 
 const mockFetch = vi.fn();
@@ -128,6 +131,118 @@ describe('getVolunteerSession', () => {
 
     const error = await getVolunteerSession('bad-token').catch((e) => e);
     expect(isAuthError(error)).toBe(true);
+  });
+});
+
+describe('getVolunteerSearch', () => {
+  it('maps the search and zones, attaching the bearer token', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            search: {
+              id: 'search-1',
+              subject_type: 'person',
+              subject_name: 'Marco Rossi',
+              subject_details: {},
+              status: 'active',
+              contact_phone: '+390612345',
+              lkp_lat: 41.9,
+              lkp_lng: 12.5,
+              lkp_address: 'Via del Corso',
+              lkp_at: '2026-08-01T10:00:00Z',
+            },
+            zones: [
+              { h3_index: '891f1d48177ffff', status: 'not_assigned', segment_id: '0', searched_at: null },
+            ],
+          },
+        }),
+    });
+
+    const result = await getVolunteerSearch('the-token');
+
+    expect(result.search).toEqual({
+      id: 'search-1',
+      subjectType: 'person',
+      subjectName: 'Marco Rossi',
+      subjectDetails: {},
+      status: 'active',
+      contactPhone: '+390612345',
+      lkpLat: 41.9,
+      lkpLng: 12.5,
+      lkpAddress: 'Via del Corso',
+      lkpAt: '2026-08-01T10:00:00Z',
+    });
+    expect(result.zones).toEqual([
+      { h3Index: '891f1d48177ffff', status: 'not_assigned', segmentId: '0', searchedAt: null },
+    ]);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toContain('/volunteer/search');
+    expect(init.headers.Authorization).toBe('Bearer the-token');
+  });
+});
+
+describe('updateZoneStatus', () => {
+  it('PATCHes the zone status and maps the response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: { h3_index: '891f1d48177ffff', status: 'searched', segment_id: '0', searched_at: '2026-08-04T10:00:00Z' },
+        }),
+    });
+
+    const result = await updateZoneStatus('the-token', '891f1d48177ffff', 'searched');
+
+    expect(result.status).toBe('searched');
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toContain('/volunteer/zones/891f1d48177ffff');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body)).toEqual({ status: 'searched' });
+  });
+});
+
+describe('createRemark', () => {
+  it('wraps the payload under a "remark" key with snake_case fields', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'remark-1',
+            search_id: 'search-1',
+            volunteer_id: 'vol-1',
+            kind: 'sighting',
+            text: 'Saw a red jacket',
+            lat: 41.9,
+            lng: 12.5,
+            reported_at: '2026-08-04T10:00:00Z',
+          },
+        }),
+    });
+
+    const result = await createRemark('the-token', {
+      id: 'remark-1',
+      kind: 'sighting',
+      text: 'Saw a red jacket',
+      lat: 41.9,
+      lng: 12.5,
+      reportedAt: '2026-08-04T10:00:00Z',
+    });
+
+    expect(result.kind).toBe('sighting');
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      remark: {
+        id: 'remark-1',
+        kind: 'sighting',
+        text: 'Saw a red jacket',
+        lat: 41.9,
+        lng: 12.5,
+        reported_at: '2026-08-04T10:00:00Z',
+      },
+    });
   });
 });
 

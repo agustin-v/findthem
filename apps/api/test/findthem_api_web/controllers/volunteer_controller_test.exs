@@ -114,6 +114,19 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert data["searched_by_volunteer_id"] == volunteer.id
   end
 
+  test "PATCH /volunteer/zones/:h3_index rejects a malformed h3_index instead of persisting it",
+       %{conn: conn, search: search} do
+    {_volunteer, token} = approved_volunteer(search)
+
+    conn =
+      conn
+      |> auth(token)
+      |> patch(~p"/volunteer/zones/ffffffffffffffff", %{"status" => "in_progress"})
+
+    assert json_response(conn, 422)
+    assert Zones.list_by_search(search.id) == []
+  end
+
   test "POST /volunteer/remarks round-trips client id/reported_at and forces volunteer_id to self",
        %{conn: conn, search: search} do
     {volunteer, token} = approved_volunteer(search)

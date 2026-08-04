@@ -187,6 +187,16 @@ export const api = {
       )
       return data.join_token
     },
+    seedZones: async (
+      searchId: string,
+      cells: { h3Index: string; segmentId: number }[],
+    ): Promise<number> => {
+      const { data } = await apiClient.post<{ data: { seeded: number } }>(
+        `/api/searches/${searchId}/zones/seed`,
+        { cells: cells.map((c) => ({ h3_index: c.h3Index, segment_id: c.segmentId })) },
+      )
+      return data.seeded
+    },
   },
   volunteers: {
     listBySearch: async (searchId: string): Promise<Volunteer[]> => {

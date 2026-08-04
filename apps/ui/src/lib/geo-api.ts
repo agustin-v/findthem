@@ -12,6 +12,7 @@ export interface GenerateSegmentsRequest {
 export interface SegmentProperties {
   segment_id: number
   cell_count: number
+  cells: string[]
   total_area_km2: number
   effective_area_km2: number
   workload: number
@@ -79,6 +80,19 @@ export async function generateSegments(
   }
 
   return res.json() as Promise<SegmentsResponse>
+}
+
+// Flattens the per-segment h3 cell lists back out into (h3Index, segmentId)
+// pairs so they can be seeded into apps/api's zones table — the geo service
+// itself is stateless and never persists this.
+export function extractZoneCells(
+  segments: FeatureCollection,
+): { h3Index: string; segmentId: number }[] {
+  return segments.features.flatMap((feature) => {
+    const props = feature.properties as Partial<SegmentProperties> | null
+    if (!props?.cells) return []
+    return props.cells.map((h3Index) => ({ h3Index, segmentId: props.segment_id! }))
+  })
 }
 
 export async function checkHealth(): Promise<boolean> {

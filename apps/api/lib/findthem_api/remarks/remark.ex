@@ -32,6 +32,14 @@ defmodule FindThemApi.Remarks.Remark do
       :reported_at
     ])
     |> validate_required([:id, :search_id, :kind, :reported_at])
+    # kind/text are plain :string columns (varchar(255) — Ecto's default,
+    # see the create_remarks migration); without a length cap here, an
+    # oversized value doesn't get a clean 422, it hits Postgres and raises
+    # an unhandled exception. lat/lng have no DB-level bound at all.
+    |> validate_length(:kind, max: 100)
+    |> validate_length(:text, max: 255)
+    |> validate_number(:lat, greater_than_or_equal_to: -90, less_than_or_equal_to: 90)
+    |> validate_number(:lng, greater_than_or_equal_to: -180, less_than_or_equal_to: 180)
     |> foreign_key_constraint(:search_id)
     |> foreign_key_constraint(:volunteer_id)
   end

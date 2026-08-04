@@ -53,12 +53,23 @@ export function getZoneColor(zone: Zone): string {
 // --- GeoJSON conversion ---
 
 export function zonesToGeoJSON(zones: Zone[]): FeatureCollection<Polygon> {
-  const features: Feature<Polygon>[] = zones.map((zone) => {
-    const boundary = cellToBoundary(zone.h3Index, true) // [lng, lat] mode
-    // Close the ring
-    const ring = [...boundary, boundary[0]]
+  const features: Feature<Polygon>[] = []
 
-    return {
+  for (const zone of zones) {
+    // Defense in depth: the backend validates h3_index format server-side,
+    // but this must never trust that fully — cellToBoundary throws on a
+    // malformed index. A skipped zone is far better than a crashed map.
+    let boundary: ReturnType<typeof cellToBoundary>
+    try {
+      boundary = cellToBoundary(zone.h3Index, true) // [lng, lat] mode
+    } catch {
+      console.warn(`Skipping zone with invalid h3Index: ${zone.h3Index}`)
+      continue
+    }
+
+    const ring = [...boundary, boundary[0]] // close the ring
+
+    features.push({
       type: 'Feature',
       properties: {
         h3Index: zone.h3Index,
@@ -69,8 +80,8 @@ export function zonesToGeoJSON(zones: Zone[]): FeatureCollection<Polygon> {
         type: 'Polygon',
         coordinates: [ring],
       },
-    }
-  })
+    })
+  }
 
   return { type: 'FeatureCollection', features }
 }

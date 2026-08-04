@@ -16,6 +16,13 @@ defmodule FindThemApi.ZonesTest do
     %{search: search}
   end
 
+  test "upsert_zone/3 rejects a malformed h3_index instead of persisting it", %{search: search} do
+    {:error, changeset} = Zones.upsert_zone(search.id, "ffffffffffffffff", %{status: "assigned"})
+
+    assert "has invalid format" in errors_on(changeset).h3_index
+    assert Zones.list_by_search(search.id) == []
+  end
+
   test "upsert_zone/3 creates a zone when none exists yet", %{search: search} do
     {:ok, zone} = Zones.upsert_zone(search.id, "891f1d48177ffff", %{status: "assigned"})
 
@@ -97,5 +104,58 @@ defmodule FindThemApi.ZonesTest do
     zones = Zones.list_by_search(search.id)
 
     assert length(zones) == 2
+  end
+
+  test "seed_zones/2 bulk-creates not_assigned zones with their segment_id", %{search: search} do
+    cells = [
+      %{h3_index: "891f1d48177ffff", segment_id: 0},
+      %{h3_index: "891f1d48178ffff", segment_id: 1}
+    ]
+
+    {:ok, count} = Zones.seed_zones(search.id, cells)
+
+    assert count == 2
+    zones = Zones.list_by_search(search.id) |> Enum.sort_by(& &1.h3_index)
+    assert Enum.map(zones, & &1.status) == ["not_assigned", "not_assigned"]
+    assert Enum.map(zones, & &1.segment_id) == ["0", "1"]
+  end
+
+  test "seed_zones/2 does not overwrite a zone that already has progress", %{search: search} do
+    {:ok, _} = Zones.upsert_zone(search.id, "891f1d48177ffff", %{status: "searched"})
+
+    {:ok, count} =
+      Zones.seed_zones(search.id, [%{h3_index: "891f1d48177ffff", segment_id: 0}])
+
+    assert count == 0
+    [zone] = Zones.list_by_search(search.id)
+    assert zone.status == "searched"
+  end
+
+  test "seed_zones/2 only inserts genuinely new cells alongside existing ones", %{search: search} do
+    {:ok, _} = Zones.upsert_zone(search.id, "891f1d48177ffff", %{status: "in_progress"})
+
+    {:ok, count} =
+      Zones.seed_zones(search.id, [
+        %{h3_index: "891f1d48177ffff", segment_id: 0},
+        %{h3_index: "891f1d48178ffff", segment_id: 0}
+      ])
+
+    assert count == 1
+    zones = Zones.list_by_search(search.id)
+    assert length(zones) == 2
+  end
+
+  test "seed_zones/2 correctly totals a payload spanning multiple insert chunks", %{
+    search: search
+  } do
+    cells =
+      for i <- 1..6000 do
+        %{h3_index: Integer.to_string(i, 16) |> String.pad_leading(15, "0"), segment_id: 0}
+      end
+
+    {:ok, count} = Zones.seed_zones(search.id, cells)
+
+    assert count == 6000
+    assert length(Zones.list_by_search(search.id)) == 6000
   end
 end

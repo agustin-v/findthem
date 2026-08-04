@@ -1,4 +1,4 @@
-import { generateSegments, checkHealth, GeoApiError } from './geo-api'
+import { generateSegments, checkHealth, GeoApiError, extractZoneCells } from './geo-api'
 import { mockSegmentsResponse } from '@/test/mocks'
 
 const mockFetch = vi.fn()
@@ -123,5 +123,32 @@ describe('checkHealth', () => {
     mockFetch.mockRejectedValueOnce(new Error('Network error'))
 
     expect(await checkHealth()).toBe(false)
+  })
+})
+
+describe('extractZoneCells', () => {
+  it('flattens each segment\'s cells into (h3Index, segmentId) pairs', () => {
+    const cells = extractZoneCells(mockSegmentsResponse.segments)
+
+    expect(cells).toEqual([
+      { h3Index: '891f1d48177ffff', segmentId: 0 },
+      { h3Index: '891f1d48178ffff', segmentId: 0 },
+      { h3Index: '891f1d4816bffff', segmentId: 1 },
+    ])
+  })
+
+  it('skips features with no cells property', () => {
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          properties: { segment_id: 0 },
+          geometry: { type: 'Polygon' as const, coordinates: [] },
+        },
+      ],
+    }
+
+    expect(extractZoneCells(geojson)).toEqual([])
   })
 })

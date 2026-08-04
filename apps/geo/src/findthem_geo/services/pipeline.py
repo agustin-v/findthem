@@ -182,6 +182,7 @@ def run_pipeline(req: GenerateSegmentsRequest) -> SegmentsResponse:
                 "properties": {
                     "segment_id": seg.segment_id,
                     "cell_count": len(seg.cells),
+                    "cells": seg.cells,
                     "total_area_km2": round(seg.total_area_km2, 4),
                     "effective_area_km2": round(seg.effective_area_km2, 4),
                     "workload": round(seg.workload, 4),

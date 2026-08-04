@@ -1,0 +1,16 @@
+{
+  "loading": "Loading...",
+  "notFound": {
+    "title": "This link isn't valid",
+    "description": "The search may have ended, or the link may have expired. Check with the coordinator who shared it with you for a new one."
+  },
+  "areaLabel": "Last seen near",
+  "subjectType": {
+    "person": "Missing person",
+    "animal": "Missing animal",
+    "object": "Missing item"
+  },
+  "openApp": "Open in the FindThem Volunteer app",
+  "noAppYet": "Don't have the app yet? Install FindThem Volunteer, then enter the code below to join.",
+  "codeLabel": "Join code"
+}

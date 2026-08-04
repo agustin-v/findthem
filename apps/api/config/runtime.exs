@@ -23,10 +23,30 @@ end
 config :findthem_api, FindThemApiWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
-# CORS_ORIGINS is a comma-separated list, e.g. "http://localhost:5173,https://app.example.com"
-config :findthem_api,
-       :cors_origins,
-       System.get_env("CORS_ORIGINS", "http://localhost:5173") |> String.split(",", trim: true)
+# CORS_ORIGINS is a comma-separated list, e.g. "http://localhost:5173,https://app.example.com".
+# Required in prod (fail fast, same as DATABASE_URL/SECRET_KEY_BASE below).
+# When unset outside prod, allow any localhost port via regex rather than an
+# ever-growing hardcoded list — apps/ui (Vite) and apps/mobile (Expo) both
+# auto-bump to the next free port when their default is taken, which would
+# otherwise silently re-break this exact-match allowlist. Native iOS/Android
+# builds aren't subject to CORS at all; only browser targets need this.
+cors_origins =
+  case System.get_env("CORS_ORIGINS") do
+    nil ->
+      if config_env() == :prod do
+        raise """
+        environment variable CORS_ORIGINS is missing.
+        For example: CORS_ORIGINS=https://app.example.com
+        """
+      end
+
+      [~r{^http://localhost:\d+$}]
+
+    value ->
+      String.split(value, ",", trim: true)
+  end
+
+config :findthem_api, :cors_origins, cors_origins
 
 # Clerk issuer + JWKS URL aren't secret (they're embedded in every session JWT / the
 # publishable key); dev defaults point at the FindThem dev Clerk instance.

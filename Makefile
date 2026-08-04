@@ -1,4 +1,4 @@
-.PHONY: dev dev-ui dev-geo dev-api install install-ui install-geo install-api test test-ui test-geo test-api lint-geo db
+.PHONY: dev dev-ui dev-geo dev-api dev-mobile install install-ui install-geo install-api install-mobile test test-ui test-geo test-api test-mobile lint-geo lint-mobile db
 
 # Run frontend, geo backend, and api backend in dev mode
 dev: db
@@ -14,12 +14,18 @@ dev-geo:
 dev-api:
 	cd apps/api && mix phx.server
 
+# Volunteer app (Expo) — not part of the default `dev` fan-out since it's an
+# interactive dev-client/simulator target, not a plain background server.
+# Run `make dev-mobile` separately; `pnpm web` for a browser-testable target.
+dev-mobile:
+	cd apps/mobile && pnpm start
+
 # Postgres (via docker-compose)
 db:
 	docker compose up -d db
 
 # Install dependencies
-install: install-ui install-geo install-api
+install: install-ui install-geo install-api install-mobile
 
 install-ui:
 	cd apps/ui && pnpm install
@@ -30,8 +36,11 @@ install-geo:
 install-api:
 	cd apps/api && mix deps.get
 
+install-mobile:
+	cd apps/mobile && pnpm install
+
 # Tests
-test: test-geo test-ui test-api
+test: test-geo test-ui test-api test-mobile
 
 test-ui:
 	cd apps/ui && pnpm test
@@ -42,6 +51,12 @@ test-geo:
 test-api:
 	cd apps/api && mix test
 
+test-mobile:
+	cd apps/mobile && pnpm test
+
 # Lint
 lint-geo:
 	cd apps/geo && uv run ruff check
+
+lint-mobile:
+	cd apps/mobile && pnpm lint

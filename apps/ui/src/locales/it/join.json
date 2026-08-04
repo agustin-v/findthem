@@ -1,0 +1,16 @@
+{
+  "loading": "Caricamento...",
+  "notFound": {
+    "title": "Questo link non è valido",
+    "description": "La ricerca potrebbe essere terminata, oppure il link potrebbe essere scaduto. Chiedi al coordinatore che te lo ha condiviso di inviartene uno nuovo."
+  },
+  "areaLabel": "Vista l'ultima volta vicino a",
+  "subjectType": {
+    "person": "Persona scomparsa",
+    "animal": "Animale scomparso",
+    "object": "Oggetto smarrito"
+  },
+  "openApp": "Apri nell'app FindThem Volunteer",
+  "noAppYet": "Non hai ancora l'app? Installa FindThem Volunteer, poi inserisci il codice qui sotto per partecipare.",
+  "codeLabel": "Codice di accesso"
+}

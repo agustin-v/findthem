@@ -77,6 +77,18 @@ interface RemoteVolunteer {
   zones_searched: number | null
 }
 
+export interface JoinPreview {
+  subjectType: 'person' | 'animal' | 'object'
+  subjectName: string
+  area: string | null
+}
+
+interface RemoteJoinPreview {
+  subject_type: 'person' | 'animal' | 'object'
+  subject_name: string
+  area: string | null
+}
+
 function mapVolunteer(remote: RemoteVolunteer): Volunteer {
   return {
     id: remote.id,
@@ -193,6 +205,14 @@ export const api = {
         { status },
       )
       return mapVolunteer(data)
+    },
+  },
+  join: {
+    preview: async (code: string): Promise<JoinPreview> => {
+      const { data } = await apiClient.get<{ data: RemoteJoinPreview }>(
+        `/join/${encodeURIComponent(code)}/preview`,
+      )
+      return { subjectType: data.subject_type, subjectName: data.subject_name, area: data.area }
     },
   },
   zones: {

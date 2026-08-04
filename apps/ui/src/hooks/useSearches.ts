@@ -25,6 +25,14 @@ export function useVolunteers(searchId: string) {
   })
 }
 
+export function useJoinPreview(code: string) {
+  return useQuery({
+    queryKey: ['join-preview', code],
+    queryFn: () => api.join.preview(code),
+    retry: false,
+  })
+}
+
 export function useCreateSearch() {
   return useMutation({
     mutationFn: (data: CreateSearchInput) => api.searches.create(data),

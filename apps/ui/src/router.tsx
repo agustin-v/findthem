@@ -10,6 +10,7 @@ import { LandingPage } from '@/pages/LandingPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { NewSearchPage } from '@/pages/NewSearchPage'
 import { SearchDetailPage } from '@/pages/SearchDetailPage'
+import { JoinLandingPage } from '@/pages/JoinLandingPage'
 import { isAuthenticated } from '@/lib/auth-bridge'
 
 const rootRoute = createRootRoute({
@@ -23,6 +24,13 @@ const indexRoute = createRoute({
   beforeLoad: () => {
     if (isAuthenticated()) throw redirect({ to: '/dashboard' })
   },
+})
+
+// Public — a volunteer's first touch from a shared link, no auth required.
+const joinRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/join/$code',
+  component: JoinLandingPage,
 })
 
 const dashboardRoute = createRoute({
@@ -54,6 +62,7 @@ const searchDetailRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  joinRoute,
   dashboardRoute.addChildren([dashboardIndexRoute, newSearchRoute, searchDetailRoute]),
 ])
 

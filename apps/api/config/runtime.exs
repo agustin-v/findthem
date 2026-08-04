@@ -28,11 +28,13 @@ config :findthem_api,
        :cors_origins,
        System.get_env("CORS_ORIGINS", "http://localhost:5173") |> String.split(",", trim: true)
 
-# Populated once Clerk is wired up (Epic #2); nil/[] is fine until then.
+# Clerk issuer + JWKS URL aren't secret (they're embedded in every session JWT / the
+# publishable key); dev defaults point at the FindThem dev Clerk instance.
 config :findthem_api, :clerk,
-  issuer: System.get_env("CLERK_ISSUER"),
+  issuer: System.get_env("CLERK_ISSUER", "https://polished-grizzly-42.clerk.accounts.dev"),
   authorized_parties:
-    System.get_env("CLERK_AUTHORIZED_PARTIES", "") |> String.split(",", trim: true)
+    System.get_env("CLERK_AUTHORIZED_PARTIES", "http://localhost:5173")
+    |> String.split(",", trim: true)
 
 # Shared secret gating the geo proxy (Story 14) — never call geo from the browser directly.
 config :findthem_api, :geo,

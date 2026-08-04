@@ -17,7 +17,7 @@ defmodule FindThemApiWeb.JoinController do
     with {:ok, search} <- Searches.get_by_join_token(code),
          {:ok, volunteer} <-
            Volunteers.join_volunteer(search.id, Map.take(params, @volunteer_fields)) do
-      token = Phoenix.Token.sign(conn, "volunteer", volunteer.id, max_age: 60 * 60 * 24 * 7)
+      token = Volunteers.sign_token(conn, volunteer.id)
 
       conn
       |> put_status(:created)

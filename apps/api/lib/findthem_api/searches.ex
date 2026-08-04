@@ -13,6 +13,15 @@ defmodule FindThemApi.Searches do
 
   def get_search!(id), do: Repo.get!(Search, id)
 
+  def get_search(id) do
+    case Repo.get(Search, id) do
+      nil -> {:error, :not_found}
+      search -> {:ok, search}
+    end
+  rescue
+    Ecto.Query.CastError -> {:error, :not_found}
+  end
+
   def get_search_for_owner(owner_id, id) do
     case Repo.get(Search, id) do
       %Search{owner_id: ^owner_id} = search -> {:ok, search}
@@ -51,6 +60,16 @@ defmodule FindThemApi.Searches do
     |> broadcast(:search_updated)
   end
 
+  def latest_generation(search_id) do
+    Repo.one(
+      from(g in Generation,
+        where: g.search_id == ^search_id,
+        order_by: [desc: g.inserted_at],
+        limit: 1
+      )
+    )
+  end
+
   def aggregates_for(%Search{id: search_id}) do
     approved_counts =
       from(v in Volunteer,
@@ -81,14 +100,7 @@ defmodule FindThemApi.Searches do
         )
       )
 
-    last_generation =
-      Repo.one(
-        from(g in Generation,
-          where: g.search_id == ^search_id,
-          order_by: [desc: g.inserted_at],
-          limit: 1
-        )
-      )
+    last_generation = latest_generation(search_id)
 
     %{
       volunteer_count: volunteer_count,

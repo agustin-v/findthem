@@ -13,6 +13,14 @@ defmodule FindThemApiWeb.Router do
     plug FindThemApiWeb.Plugs.RateLimit, bucket: "join"
   end
 
+  pipeline :volunteer_session do
+    plug FindThemApiWeb.Plugs.VolunteerToken
+  end
+
+  pipeline :volunteer_authenticated do
+    plug FindThemApiWeb.Plugs.VolunteerAuth
+  end
+
   scope "/", FindThemApiWeb do
     pipe_through :api
 
@@ -24,6 +32,20 @@ defmodule FindThemApiWeb.Router do
 
     get "/join/:code/preview", JoinController, :preview
     post "/join", JoinController, :create
+  end
+
+  scope "/volunteer", FindThemApiWeb do
+    pipe_through [:api, :volunteer_session]
+
+    get "/session", VolunteerSessionController, :show
+  end
+
+  scope "/volunteer", FindThemApiWeb do
+    pipe_through [:api, :volunteer_authenticated]
+
+    get "/search", VolunteerSearchController, :show
+    patch "/zones/:h3_index", VolunteerZoneController, :update
+    post "/remarks", VolunteerRemarkController, :create
   end
 
   scope "/api", FindThemApiWeb do

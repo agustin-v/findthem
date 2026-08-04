@@ -40,4 +40,42 @@ defmodule FindThemApi.VolunteersTest do
     assert "should be at most 200 character(s)" in errors_on(changeset).name
     assert "should be at most 32 character(s)" in errors_on(changeset).phone
   end
+
+  test "sign_token/2 and verify_token/2 round-trip to the same volunteer", %{search: search} do
+    {:ok, volunteer} =
+      Volunteers.join_volunteer(search.id, %{name: "Giulia Bianchi", phone: "+390698765"})
+
+    token = Volunteers.sign_token(FindThemApiWeb.Endpoint, volunteer.id)
+
+    assert {:ok, found} = Volunteers.verify_token(FindThemApiWeb.Endpoint, token)
+    assert found.id == volunteer.id
+  end
+
+  test "verify_token/2 rejects a garbage token", %{search: _search} do
+    assert {:error, :invalid} = Volunteers.verify_token(FindThemApiWeb.Endpoint, "garbage")
+  end
+
+  test "verify_token/2 rejects a well-formed token for a volunteer that no longer exists", %{
+    search: search
+  } do
+    {:ok, volunteer} =
+      Volunteers.join_volunteer(search.id, %{name: "Giulia Bianchi", phone: "+390698765"})
+
+    token = Volunteers.sign_token(FindThemApiWeb.Endpoint, volunteer.id)
+    Repo.delete(volunteer)
+
+    assert {:error, :invalid} = Volunteers.verify_token(FindThemApiWeb.Endpoint, token)
+  end
+
+  test "touch_last_active/1 updates last_active_at without broadcasting", %{search: search} do
+    {:ok, volunteer} =
+      Volunteers.join_volunteer(search.id, %{name: "Giulia Bianchi", phone: "+390698765"})
+
+    Phoenix.PubSub.subscribe(FindThemApi.PubSub, "search:#{search.id}")
+
+    {:ok, touched} = Volunteers.touch_last_active(volunteer)
+
+    assert touched.last_active_at != nil
+    refute_receive {:volunteer_updated, _}
+  end
 end

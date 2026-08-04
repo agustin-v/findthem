@@ -138,4 +138,31 @@ defmodule FindThemApi.SearchesTest do
 
     assert {:error, :not_found} = Searches.get_by_join_token(closed.join_token)
   end
+
+  test "latest_generation/1 returns nil when there are no generations", %{owner: owner} do
+    {:ok, search} =
+      Searches.create_search(owner.id, %{
+        subject_type: "person",
+        subject_name: "Marco Rossi",
+        contact_phone: "+390612345"
+      })
+
+    assert Searches.latest_generation(search.id) == nil
+  end
+
+  test "get_search/1 returns the search when it exists", %{owner: owner} do
+    {:ok, search} =
+      Searches.create_search(owner.id, %{
+        subject_type: "person",
+        subject_name: "Marco Rossi",
+        contact_phone: "+390612345"
+      })
+
+    assert {:ok, found} = Searches.get_search(search.id)
+    assert found.id == search.id
+  end
+
+  test "get_search/1 returns :not_found for a garbage id instead of raising" do
+    assert {:error, :not_found} = Searches.get_search("not-a-uuid")
+  end
 end

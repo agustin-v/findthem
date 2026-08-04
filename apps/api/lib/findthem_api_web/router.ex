@@ -20,7 +20,10 @@ defmodule FindThemApiWeb.Router do
 
     get "/me", MeController, :show
 
-    resources "/searches", SearchController, only: [:index, :show, :create]
+    resources "/searches", SearchController, only: [:index, :show, :create] do
+      resources "/zones", ZoneController, only: [:index, :update], param: "h3_index"
+      resources "/remarks", RemarkController, only: [:index, :create]
+    end
   end
 
   # Enable LiveDashboard in development

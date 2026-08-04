@@ -5,6 +5,12 @@ defmodule FindThemApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/", FindThemApiWeb do
+    pipe_through :api
+
+    get "/health", HealthController, :index
+  end
+
   scope "/api", FindThemApiWeb do
     pipe_through :api
   end

@@ -1,18 +1,47 @@
-# FindThemApi
+# FindThem API
 
-To start your Phoenix server:
+Elixir/Phoenix backend: Postgres-backed CRUD for searches/zones/remarks, and a synchronous
+proxy in front of `apps/geo` for segment generation. API-only (no HTML/assets/mailer).
 
-* Run `mix setup` to install and setup dependencies
-* Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+## Run
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+```sh
+make db                          # from repo root — starts Postgres (postgis/postgis:16-3.4)
+cd apps/api && mix deps.get && mix ecto.create
+cd apps/api && mix phx.server    # http://localhost:4000
+```
 
-Ready to run in production? Please [check our deployment guides](https://phoenix.hexdocs.pm/deployment.html).
+Or from the repo root: `make install-api` then `make dev-api`.
 
-## Learn more
+## Test
 
-* Official website: https://www.phoenixframework.org/
-* Guides: https://phoenix.hexdocs.pm/overview.html
-* Docs: https://phoenix.hexdocs.pm
-* Forum: https://elixirforum.com/c/phoenix-forum
-* Source: https://github.com/phoenixframework/phoenix
+```sh
+mix test
+```
+
+## Health check
+
+```sh
+curl http://localhost:4000/health   # {"status": "ok"}
+```
+
+## Environment
+
+See `.env.example`. All variables have dev-friendly defaults in `config/runtime.exs` except
+`DATABASE_URL` and `SECRET_KEY_BASE`, which are required in prod.
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres connection string (prod only; dev uses `config/dev.exs`) |
+| `PORT` | HTTP port (default `4000`) |
+| `CORS_ORIGINS` | Comma-separated list of allowed browser origins |
+| `SECRET_KEY_BASE` | Cookie/session signing key (prod only; generate with `mix phx.gen.secret`) |
+| `CLERK_ISSUER` / `CLERK_AUTHORIZED_PARTIES` | Clerk JWT verification (Epic #2) |
+| `GEO_URL` / `GEO_INTERNAL_TOKEN` | `apps/geo` base URL + shared secret for the internal proxy |
+
+Dev Postgres connection (`config/dev.exs`): `postgres` / `postgres` @ `localhost:5432`,
+database `findthem_api_dev` — matches the `db` service in the root `docker-compose.yml`.
+
+## LiveDashboard
+
+Available at `http://localhost:4000/dev/dashboard` in dev only.

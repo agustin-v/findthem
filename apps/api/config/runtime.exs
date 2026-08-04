@@ -23,6 +23,22 @@ end
 config :findthem_api, FindThemApiWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# CORS_ORIGINS is a comma-separated list, e.g. "http://localhost:5173,https://app.example.com"
+config :findthem_api,
+       :cors_origins,
+       System.get_env("CORS_ORIGINS", "http://localhost:5173") |> String.split(",", trim: true)
+
+# Populated once Clerk is wired up (Epic #2); nil/[] is fine until then.
+config :findthem_api, :clerk,
+  issuer: System.get_env("CLERK_ISSUER"),
+  authorized_parties:
+    System.get_env("CLERK_AUTHORIZED_PARTIES", "") |> String.split(",", trim: true)
+
+# Shared secret gating the geo proxy (Story 14) — never call geo from the browser directly.
+config :findthem_api, :geo,
+  url: System.get_env("GEO_URL", "http://localhost:8000"),
+  internal_token: System.get_env("GEO_INTERNAL_TOKEN")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

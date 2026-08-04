@@ -1,7 +1,7 @@
 .PHONY: dev dev-ui dev-geo dev-api install install-ui install-geo install-api test test-ui test-geo test-api lint-geo db
 
 # Run frontend, geo backend, and api backend in dev mode
-dev:
+dev: db
 	@echo "Starting geo backend (port 8000), api backend (port 4000), and UI (port 5173)..."
 	$(MAKE) dev-geo & $(MAKE) dev-api & $(MAKE) dev-ui & wait
 

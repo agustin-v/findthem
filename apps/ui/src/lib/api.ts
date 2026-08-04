@@ -18,13 +18,22 @@ export interface SearchDetail extends Search {
   lastSeenAt: string
   lastSeenCoords?: { lat: number; lng: number }
   details: Record<string, string>
+  joinToken: string
 }
+
+export type VolunteerStatus = 'pending' | 'approved' | 'removed'
 
 export interface Volunteer {
   id: string
   name: string
-  avatarUrl?: string
-  online: boolean
+  phone: string
+  resourceType: string | null
+  status: VolunteerStatus
+  lastActiveAt: string | null
+  joinedAt: string
+  approvedAt: string | null
+  removedAt: string | null
+  zonesSearched: number
 }
 
 export interface CreateSearchInput {
@@ -52,6 +61,35 @@ interface RemoteSearch {
   volunteer_count: number
   zones_searched: number
   total_zones: number
+  join_token: string
+}
+
+interface RemoteVolunteer {
+  id: string
+  name: string
+  phone: string
+  resource_type: string | null
+  status: VolunteerStatus
+  last_active_at: string | null
+  joined_at: string
+  approved_at: string | null
+  removed_at: string | null
+  zones_searched: number | null
+}
+
+function mapVolunteer(remote: RemoteVolunteer): Volunteer {
+  return {
+    id: remote.id,
+    name: remote.name,
+    phone: remote.phone,
+    resourceType: remote.resource_type,
+    status: remote.status,
+    lastActiveAt: remote.last_active_at,
+    joinedAt: remote.joined_at,
+    approvedAt: remote.approved_at,
+    removedAt: remote.removed_at,
+    zonesSearched: remote.zones_searched ?? 0,
+  }
 }
 
 function mapSearch(remote: RemoteSearch): SearchDetail {
@@ -76,6 +114,7 @@ function mapSearch(remote: RemoteSearch): SearchDetail {
         ? { lat: remote.lkp_lat, lng: remote.lkp_lng }
         : undefined,
     details,
+    joinToken: remote.join_token,
   }
 }
 
@@ -130,27 +169,30 @@ export const api = {
       )
       return mapSearch(created)
     },
+    rotateJoinToken: async (searchId: string): Promise<string> => {
+      const { data } = await apiClient.post<{ data: { join_token: string } }>(
+        `/api/searches/${searchId}/join_token/rotate`,
+      )
+      return data.join_token
+    },
   },
   volunteers: {
     listBySearch: async (searchId: string): Promise<Volunteer[]> => {
-      await delay(500)
-      const data: Record<string, Volunteer[]> = {
-        '1': [
-          { id: 'v1', name: 'Giulia Bianchi', online: true },
-          { id: 'v2', name: 'Luca Moretti', online: true },
-          { id: 'v3', name: 'Sofia Conti', online: false },
-          { id: 'v4', name: 'Alessandro Ricci', online: true },
-        ],
-        '2': [
-          { id: 'v5', name: 'Elena Ferrara', online: false },
-          { id: 'v6', name: 'Marco De Luca', online: false },
-          { id: 'v7', name: 'Chiara Romano', online: true },
-          { id: 'v8', name: 'Davide Russo', online: false },
-          { id: 'v9', name: 'Francesca Gallo', online: true },
-          { id: 'v10', name: 'Matteo Colombo', online: false },
-        ],
-      }
-      return data[searchId] ?? []
+      const { data } = await apiClient.get<{ data: RemoteVolunteer[] }>(
+        `/api/searches/${searchId}/volunteers`,
+      )
+      return data.map(mapVolunteer)
+    },
+    setStatus: async (
+      searchId: string,
+      volunteerId: string,
+      status: 'approved' | 'removed',
+    ): Promise<Volunteer> => {
+      const { data } = await apiClient.patch<{ data: RemoteVolunteer }>(
+        `/api/searches/${searchId}/volunteers/${volunteerId}`,
+        { status },
+      )
+      return mapVolunteer(data)
     },
   },
   zones: {

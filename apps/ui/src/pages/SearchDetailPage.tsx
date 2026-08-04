@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { MapView } from '@/components/shared/MapView'
 import { SearchInfoCard } from '@/components/search-detail/SearchInfoCard'
 import { VolunteerCard } from '@/components/search-detail/VolunteerCard'
+import { InvitePanel } from '@/components/search-detail/InvitePanel'
 import { ZoneLegend } from '@/components/search-detail/ZoneLegend'
 import { useSearch, useVolunteers } from '@/hooks/useSearches'
 import { useSegmentLayer } from '@/hooks/useSegmentLayer'
@@ -19,7 +20,7 @@ export function SearchDetailPage() {
   const { t } = useTranslation('dashboard')
   const { searchId } = useParams({ strict: false }) as { searchId: string }
   const { data: search, isLoading, isError } = useSearch(searchId)
-  const { data: volunteers = [] } = useVolunteers(searchId)
+  const { data: volunteers = [], isError: isVolunteersError } = useVolunteers(searchId)
   const segments = useGeoSegmentsStore((s) => s.segmentsBySearch[searchId])
   const restrictedAreas = useGeoSegmentsStore((s) => s.restrictedAreasBySearch[searchId])
   const geoLoading = useGeoSegmentsStore((s) => s.loading)
@@ -98,8 +99,9 @@ export function SearchDetailPage() {
         <div className="pointer-events-auto absolute left-4 top-4 w-80">
           <SearchInfoCard search={search} />
         </div>
-        <div className="pointer-events-auto absolute right-4 top-4 w-72">
-          <VolunteerCard volunteers={volunteers} />
+        <div className="pointer-events-auto absolute right-4 top-4 flex w-72 flex-col gap-4">
+          <InvitePanel searchId={searchId} joinToken={search.joinToken} />
+          <VolunteerCard searchId={searchId} volunteers={volunteers} isError={isVolunteersError} />
         </div>
         <div className="pointer-events-auto absolute bottom-4 left-4 w-48">
           <ZoneLegend />

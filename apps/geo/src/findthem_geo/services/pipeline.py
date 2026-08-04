@@ -175,26 +175,28 @@ def run_pipeline(req: GenerateSegmentsRequest) -> SegmentsResponse:
     for seg in segments:
         if seg.polygon.is_empty:
             continue  # drop degenerate segments — no geometry to render
+        properties = {
+            "segment_id": seg.segment_id,
+            "cell_count": len(seg.cells),
+            "total_area_km2": round(seg.total_area_km2, 4),
+            "effective_area_km2": round(seg.effective_area_km2, 4),
+            "workload": round(seg.workload, 4),
+            "assigned_resource_type": seg.assigned_resource_type,
+            "road_density": round(seg.road_density, 2),
+            "vehicle_accessible": seg.vehicle_accessible,
+            "searchable": seg.searchable,
+            "estimated_hours": seg.estimated_hours,
+            "priority": seg.priority,
+            "lkp_distance_km": round(seg.lkp_distance_km, 4),
+            "entry_point": seg.entry_point,
+        }
+        if req.include_cells:
+            properties["cells"] = seg.cells
         segment_features.append(
             {
                 "type": "Feature",
                 "geometry": mapping(seg.polygon),
-                "properties": {
-                    "segment_id": seg.segment_id,
-                    "cell_count": len(seg.cells),
-                    "cells": seg.cells,
-                    "total_area_km2": round(seg.total_area_km2, 4),
-                    "effective_area_km2": round(seg.effective_area_km2, 4),
-                    "workload": round(seg.workload, 4),
-                    "assigned_resource_type": seg.assigned_resource_type,
-                    "road_density": round(seg.road_density, 2),
-                    "vehicle_accessible": seg.vehicle_accessible,
-                    "searchable": seg.searchable,
-                    "estimated_hours": seg.estimated_hours,
-                    "priority": seg.priority,
-                    "lkp_distance_km": round(seg.lkp_distance_km, 4),
-                    "entry_point": seg.entry_point,
-                },
+                "properties": properties,
             }
         )
 

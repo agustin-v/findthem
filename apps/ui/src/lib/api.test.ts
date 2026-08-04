@@ -1,4 +1,5 @@
 import { api } from './api'
+import { mockSegmentsResponse } from '@/test/mocks'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
@@ -125,6 +126,74 @@ describe('api.volunteers.listBySearch', () => {
         zonesSearched: 0,
       },
     ])
+  })
+})
+
+describe('api.searches.generate', () => {
+  it('POSTs radius/h3/resources and returns the generation response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'gen-1',
+            meta: mockSegmentsResponse.meta,
+            response: mockSegmentsResponse,
+            inserted_at: '2026-08-04T10:00:00Z',
+          },
+        }),
+    })
+
+    const result = await api.searches.generate('search-1', {
+      radiusKm: 1.5,
+      resources: [{ type: 'people', count: 4 }],
+    })
+
+    expect(result).toEqual(mockSegmentsResponse)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/generate')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({
+      radius_km: 1.5,
+      resources: [{ type: 'people', count: 4 }],
+    })
+  })
+})
+
+describe('api.searches.getLatestGeneration', () => {
+  it('returns the response payload when a generation exists', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'gen-1',
+            meta: mockSegmentsResponse.meta,
+            response: mockSegmentsResponse,
+            inserted_at: '2026-08-04T10:00:00Z',
+          },
+        }),
+    })
+
+    const result = await api.searches.getLatestGeneration('search-1')
+
+    expect(result).toEqual(mockSegmentsResponse)
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/generations/latest')
+  })
+
+  it('returns null when no generation exists yet', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: null }),
+    })
+
+    const result = await api.searches.getLatestGeneration('search-1')
+
+    expect(result).toBeNull()
   })
 })
 

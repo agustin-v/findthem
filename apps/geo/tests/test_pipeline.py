@@ -150,11 +150,12 @@ class TestPipelineWithRoads:
 
     @patch("findthem_geo.services.pipeline.fetch_osm_data")
     @pytest.mark.anyio
-    async def test_segment_features_expose_cell_indices(self, mock_osm):
+    async def test_segment_features_expose_cell_indices_when_requested(self, mock_osm):
         mock_osm.return_value = _mock_osm_data_with_roads()
         req = GenerateSegmentsRequest(
             center=LatLng(lat=41.905, lng=12.498),
             radius_km=0.5,
+            include_cells=True,
         )
         resp = run_pipeline(req)
         for feat in resp.segments["features"]:
@@ -162,6 +163,18 @@ class TestPipelineWithRoads:
             assert "cells" in props
             assert isinstance(props["cells"], list)
             assert len(props["cells"]) == props["cell_count"]
+
+    @patch("findthem_geo.services.pipeline.fetch_osm_data")
+    @pytest.mark.anyio
+    async def test_segment_features_omit_cells_by_default(self, mock_osm):
+        mock_osm.return_value = _mock_osm_data_with_roads()
+        req = GenerateSegmentsRequest(
+            center=LatLng(lat=41.905, lng=12.498),
+            radius_km=0.5,
+        )
+        resp = run_pipeline(req)
+        for feat in resp.segments["features"]:
+            assert "cells" not in feat["properties"]
 
     @patch("findthem_geo.services.pipeline.fetch_osm_data")
     @pytest.mark.anyio

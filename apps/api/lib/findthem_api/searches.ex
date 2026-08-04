@@ -4,6 +4,7 @@ defmodule FindThemApi.Searches do
   alias FindThemApi.Repo
   alias FindThemApi.Searches.{Generation, Search, Zone}
   alias FindThemApi.Volunteers.Volunteer
+  alias FindThemApi.Zones
 
   def list_searches_by_owner(owner_id) do
     Search
@@ -96,6 +97,120 @@ defmodule FindThemApi.Searches do
       )
     )
   end
+
+  # The synchronous segmentation proxy (Story 6) — the browser never talks to
+  # apps/geo directly. `attrs["resources"]` lets the wizard override on first
+  # create; omitted on a rebalance call, where it defaults to current
+  # approved volunteer counts. `radius_km`/`h3_resolution` are persisted back
+  # onto the search so a later rebalance call can omit them too.
+  def generate(%Search{} = search, attrs) do
+    attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
+
+    with {:ok, radius_km} <- resolve_radius_km(attrs, search) do
+      h3_resolution = attrs["h3_resolution"] || search.h3_resolution || 9
+      resources = attrs["resources"] || default_resources(search.id)
+      geo_params = build_geo_params(search, radius_km, h3_resolution, resources)
+      geo_client = Application.get_env(:findthem_api, :geo_client, FindThemApi.Geo.Client)
+
+      with {:ok, geo_response} <- geo_client.generate_segments(geo_params) do
+        persist_generation(search, geo_params, geo_response, radius_km, h3_resolution)
+      end
+    end
+  end
+
+  defp resolve_radius_km(%{"radius_km" => radius_km}, _search) when is_number(radius_km),
+    do: {:ok, radius_km * 1.0}
+
+  defp resolve_radius_km(_attrs, %Search{radius_km: radius_km}) when is_number(radius_km),
+    do: {:ok, radius_km}
+
+  defp resolve_radius_km(_attrs, _search), do: {:error, :radius_km_required}
+
+  defp default_resources(search_id) do
+    from(v in Volunteer,
+      where: v.search_id == ^search_id and v.status == "approved" and not is_nil(v.resource_type),
+      group_by: v.resource_type,
+      select: {v.resource_type, count(v.id)}
+    )
+    |> Repo.all()
+    |> Enum.map(fn {type, count} -> %{"type" => type, "count" => count} end)
+  end
+
+  defp build_geo_params(search, radius_km, h3_resolution, resources) do
+    %{
+      "center" => %{"lat" => search.lkp_lat, "lng" => search.lkp_lng},
+      "radius_km" => radius_km,
+      "h3_resolution" => h3_resolution,
+      "include_cells" => true
+    }
+    |> maybe_put_resources(resources)
+  end
+
+  defp maybe_put_resources(params, []), do: params
+  defp maybe_put_resources(params, resources), do: Map.put(params, "resources", resources)
+
+  defp persist_generation(search, geo_params, geo_response, radius_km, h3_resolution) do
+    cells = extract_zone_cells(geo_response)
+
+    Repo.transaction(fn ->
+      with {:ok, _search} <-
+             search
+             |> Search.changeset(%{"radius_km" => radius_km, "h3_resolution" => h3_resolution})
+             |> Repo.update(),
+           {:ok, generation} <-
+             %Generation{}
+             |> Generation.changeset(%{
+               "search_id" => search.id,
+               "request_params" => geo_params,
+               "meta" => Map.get(geo_response, "meta", %{}),
+               "response" => strip_cells(geo_response)
+             })
+             |> Repo.insert(),
+           {:ok, _count} <- Zones.seed_zones(search.id, cells) do
+        generation
+      else
+        {:error, error} -> Repo.rollback(error)
+      end
+    end)
+    |> broadcast_generation(search.id)
+  end
+
+  defp extract_zone_cells(%{"segments" => %{"features" => features}}) do
+    Enum.flat_map(features, fn %{"properties" => props} ->
+      case props do
+        %{"cells" => cells, "segment_id" => segment_id} when is_list(cells) ->
+          Enum.map(cells, fn h3_index -> %{h3_index: h3_index, segment_id: segment_id} end)
+
+        _ ->
+          []
+      end
+    end)
+  end
+
+  defp extract_zone_cells(_response), do: []
+
+  defp strip_cells(%{"segments" => %{"features" => features}} = response) do
+    stripped =
+      Enum.map(features, fn feature ->
+        update_in(feature, ["properties"], &Map.delete(&1, "cells"))
+      end)
+
+    put_in(response, ["segments", "features"], stripped)
+  end
+
+  defp strip_cells(response), do: response
+
+  defp broadcast_generation({:ok, %Generation{} = generation} = result, search_id) do
+    Phoenix.PubSub.broadcast(
+      FindThemApi.PubSub,
+      "search:#{search_id}",
+      {:generation_created, generation}
+    )
+
+    result
+  end
+
+  defp broadcast_generation(error, _search_id), do: error
 
   def aggregates_for(%Search{id: search_id}) do
     approved_counts =

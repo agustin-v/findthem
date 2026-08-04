@@ -19,6 +19,10 @@ class GenerateSegmentsRequest(BaseModel):
     radius_km: float = Field(gt=0, le=50)
     h3_resolution: int = Field(default=9, ge=4, le=12)
     resources: list[Resource] = Field(default_factory=lambda: [Resource(type="people", count=4)])
+    # Opt-in: apps/api's generate proxy sets this to persist per-cell zone
+    # rows (see apps/api's Zones.seed_zones). Off by default since most
+    # callers only need segment polygons, not the underlying H3 cell list.
+    include_cells: bool = False
 
     @model_validator(mode="after")
     def _check_cell_budget(self) -> "GenerateSegmentsRequest":

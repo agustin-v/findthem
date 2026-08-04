@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
+from findthem_geo.config import settings
 from findthem_geo.services.osm_fetcher import OSMData
 
 
@@ -147,3 +148,59 @@ class TestGenerateSegmentsEndpoint:
             },
         )
         assert resp.status_code == 422
+
+
+class TestInternalTokenGate:
+    @pytest.mark.anyio
+    async def test_no_token_configured_is_a_noop(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "internal_token", None)
+
+        resp = await client.post(
+            "/api/v1/segments/generate",
+            json={"center": {"lat": 41.9028, "lng": 12.4964}, "radius_km": 1.0},
+        )
+
+        assert resp.status_code == 200
+
+    @pytest.mark.anyio
+    async def test_missing_header_rejected_when_token_configured(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "internal_token", "s3cret")
+
+        resp = await client.post(
+            "/api/v1/segments/generate",
+            json={"center": {"lat": 41.9028, "lng": 12.4964}, "radius_km": 1.0},
+        )
+
+        assert resp.status_code == 403
+
+    @pytest.mark.anyio
+    async def test_wrong_header_rejected(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "internal_token", "s3cret")
+
+        resp = await client.post(
+            "/api/v1/segments/generate",
+            json={"center": {"lat": 41.9028, "lng": 12.4964}, "radius_km": 1.0},
+            headers={"x-internal-token": "wrong"},
+        )
+
+        assert resp.status_code == 403
+
+    @pytest.mark.anyio
+    async def test_correct_header_accepted(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "internal_token", "s3cret")
+
+        resp = await client.post(
+            "/api/v1/segments/generate",
+            json={"center": {"lat": 41.9028, "lng": 12.4964}, "radius_km": 1.0},
+            headers={"x-internal-token": "s3cret"},
+        )
+
+        assert resp.status_code == 200
+
+    @pytest.mark.anyio
+    async def test_gate_does_not_apply_to_health(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "internal_token", "s3cret")
+
+        resp = await client.get("/health")
+
+        assert resp.status_code == 200

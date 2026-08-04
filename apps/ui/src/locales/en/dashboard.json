@@ -57,6 +57,8 @@
         "drones": "Drones"
       }
     },
-    "generatingArea": "Generating search area..."
+    "generatingArea": "Generating search area...",
+    "generateFailed": "Couldn't generate the search area.",
+    "retryGenerate": "Retry"
   }
 }

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from '@tanstack/react-router'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { StepIndicator } from '@/components/search/StepIndicator'
 import { SubjectTypeSelector } from '@/components/search/SubjectTypeSelector'
@@ -10,7 +11,7 @@ import { ResourcesStep } from '@/components/search/ResourcesStep'
 import { ReviewStep } from '@/components/search/ReviewStep'
 import { useCreateSearch } from '@/hooks/useSearches'
 import { useSearchCreationStore } from '@/stores/useSearchCreationStore'
-import { generateSegments } from '@/lib/geo-api'
+import { api } from '@/lib/api'
 import { useGeoSegmentsStore } from '@/stores/useGeoSegmentsStore'
 import { ApiError } from '@/lib/api-client'
 import type {
@@ -40,6 +41,7 @@ export function NewSearchPage() {
 
   const createSearch = useCreateSearch()
   const { setResponse, setLoading, setError } = useGeoSegmentsStore()
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const handleStep2Submit = (data: SubjectData) => {
     setFormData(data)
@@ -52,23 +54,32 @@ export function NewSearchPage() {
     createSearch.mutate(
       { subjectType, ...formData, resources: resourcesData },
       {
-        onSuccess: (result) => {
+        onSuccess: async (result) => {
           const searchId = result.id
 
-          // Trigger geo segmentation if we have coords and resources
+          // Trigger segmentation via apps/api (proxies to geo server-side)
+          // if we have coords and resources. Awaited before navigating so
+          // SearchDetailPage's hydration effect never races an in-flight
+          // generate call — by the time it mounts, the generation has
+          // already settled (persisted, or the error below is visible).
           const coords = 'lastSeenCoords' in formData ? formData.lastSeenCoords : undefined
           if (coords && resourcesData) {
+            setIsGenerating(true)
             setLoading(true)
-            generateSegments({
-              center: { lat: coords.lat, lng: coords.lng },
-              radius_km: resourcesData.radiusKm,
-              resources: resourcesData.resources.map((r) => ({
-                type: r.type,
-                count: r.count,
-              })),
-            })
-              .then((data) => setResponse(searchId, data))
-              .catch((err) => setError(err instanceof Error ? err.message : 'Failed'))
+            try {
+              const data = await api.searches.generate(searchId, {
+                radiusKm: resourcesData.radiusKm,
+                resources: resourcesData.resources.map((r) => ({
+                  type: r.type,
+                  count: r.count,
+                })),
+              })
+              setResponse(searchId, data)
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to generate search segments')
+            } finally {
+              setIsGenerating(false)
+            }
           }
 
           navigate({ to: '/dashboard/search/$searchId', params: { searchId } })
@@ -155,7 +166,7 @@ export function NewSearchPage() {
             resourcesData={resourcesData}
             onBack={() => setStep(3)}
             onSubmit={handleCreate}
-            isSubmitting={createSearch.isPending}
+            isSubmitting={createSearch.isPending || isGenerating}
             error={createSearch.isError ? formatCreateError(createSearch.error) : undefined}
           />
         )}

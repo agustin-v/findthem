@@ -23,6 +23,9 @@ config :findthem_api, FindThemApiWeb.Endpoint,
 # Print only warnings and errors during test
 config :logger, level: :warning
 
+# Mox — tests must never hit the real geo service.
+config :findthem_api, :geo_client, FindThemApi.Geo.ClientMock
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

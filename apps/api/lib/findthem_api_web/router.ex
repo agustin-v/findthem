@@ -58,7 +58,8 @@ defmodule FindThemApiWeb.Router do
       resources "/remarks", RemarkController, only: [:index, :create]
       resources "/volunteers", SearchVolunteerController, only: [:index, :update]
       post "/join_token/rotate", JoinTokenController, :rotate
-      post "/zones/seed", ZoneSeedController, :create
+      post "/generate", GenerationController, :create
+      get "/generations/latest", GenerationController, :latest
     end
   end
 

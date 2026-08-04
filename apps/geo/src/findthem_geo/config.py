@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: list[str] = ["*"]
+    # When set, /api/v1/segments/generate requires a matching X-Internal-Token
+    # header (apps/api's Story 5 client sends it). None = no-op, for local dev
+    # and any deploy that hasn't set the shared secret yet.
+    internal_token: str | None = None
     osm_cache_dir: str = ".cache/osm"
     osm_cache_ttl_hours: int = 24
     osm_request_timeout_s: int = 60  # per-request timeout for osmnx + Overpass calls

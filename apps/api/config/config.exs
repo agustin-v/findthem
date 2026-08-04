@@ -31,6 +31,10 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Swapped for FindThemApi.Geo.ClientMock in config/test.exs (Mox) so tests
+# never hit the real geo service.
+config :findthem_api, :geo_client, FindThemApi.Geo.Client
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

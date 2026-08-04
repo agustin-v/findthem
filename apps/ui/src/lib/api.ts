@@ -1,6 +1,7 @@
 import { latLngToCell, gridDisk } from 'h3-js'
 import { apiClient } from './api-client'
 import type { Zone, ZoneStatus, ZonesResponse } from './zones'
+import type { SegmentsMeta, SegmentsResponse } from './geo-api'
 
 export interface Search {
   id: string
@@ -39,6 +40,19 @@ export interface Volunteer {
 export interface CreateSearchInput {
   subjectType: 'person' | 'animal' | 'object'
   [key: string]: unknown
+}
+
+export interface GenerateSearchParams {
+  radiusKm?: number
+  h3Resolution?: number
+  resources?: { type: string; count: number }[]
+}
+
+interface RemoteGeneration {
+  id: string
+  meta: SegmentsMeta
+  response: SegmentsResponse
+  inserted_at: string
 }
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -187,15 +201,22 @@ export const api = {
       )
       return data.join_token
     },
-    seedZones: async (
-      searchId: string,
-      cells: { h3Index: string; segmentId: number }[],
-    ): Promise<number> => {
-      const { data } = await apiClient.post<{ data: { seeded: number } }>(
-        `/api/searches/${searchId}/zones/seed`,
-        { cells: cells.map((c) => ({ h3_index: c.h3Index, segment_id: c.segmentId })) },
+    generate: async (searchId: string, params: GenerateSearchParams): Promise<SegmentsResponse> => {
+      const { data } = await apiClient.post<{ data: RemoteGeneration }>(
+        `/api/searches/${searchId}/generate`,
+        {
+          radius_km: params.radiusKm,
+          h3_resolution: params.h3Resolution,
+          resources: params.resources,
+        },
       )
-      return data.seeded
+      return data.response
+    },
+    getLatestGeneration: async (searchId: string): Promise<SegmentsResponse | null> => {
+      const { data } = await apiClient.get<{ data: RemoteGeneration | null }>(
+        `/api/searches/${searchId}/generations/latest`,
+      )
+      return data ? data.response : null
     },
   },
   volunteers: {

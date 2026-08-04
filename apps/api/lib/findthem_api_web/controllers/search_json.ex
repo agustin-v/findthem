@@ -1,0 +1,42 @@
+defmodule FindThemApiWeb.SearchJSON do
+  alias FindThemApi.Searches
+
+  def index(%{searches: searches}) do
+    %{data: Enum.map(searches, &data/1)}
+  end
+
+  def show(%{search: search}) do
+    %{data: data(search)}
+  end
+
+  defp data(search) do
+    aggregates = Searches.aggregates_for(search)
+
+    %{
+      id: search.id,
+      subject_type: search.subject_type,
+      subject_name: search.subject_name,
+      subject_details: search.subject_details,
+      contact_phone: search.contact_phone,
+      photo_urls: search.photo_urls,
+      status: search.status,
+      lkp_lat: search.lkp_lat,
+      lkp_lng: search.lkp_lng,
+      lkp_address: search.lkp_address,
+      lkp_at: search.lkp_at,
+      radius_km: search.radius_km,
+      h3_resolution: search.h3_resolution,
+      join_token: search.join_token,
+      outcome: search.outcome,
+      closed_at: search.closed_at,
+      inserted_at: search.inserted_at,
+      updated_at: search.updated_at,
+      volunteer_count: aggregates.volunteer_count,
+      pending_count: aggregates.pending_count,
+      approved_counts: aggregates.approved_counts,
+      zones_searched: aggregates.zones_searched,
+      total_zones: aggregates.total_zones,
+      rebalance_suggested: aggregates.rebalance_suggested
+    }
+  end
+end

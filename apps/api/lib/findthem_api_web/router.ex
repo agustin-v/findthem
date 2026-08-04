@@ -19,6 +19,8 @@ defmodule FindThemApiWeb.Router do
     pipe_through [:api, :authenticated]
 
     get "/me", MeController, :show
+
+    resources "/searches", SearchController, only: [:index, :show, :create]
   end
 
   # Enable LiveDashboard in development

@@ -57,7 +57,18 @@ defmodule FindThemApi.Searches.Search do
     |> validate_required([:owner_id, :subject_type, :subject_name, :contact_phone, :join_token])
     |> validate_inclusion(:subject_type, @subject_types)
     |> validate_inclusion(:status, @statuses)
+    |> validate_lkp_at_not_future()
     |> unique_constraint(:join_token)
     |> foreign_key_constraint(:owner_id)
+  end
+
+  defp validate_lkp_at_not_future(changeset) do
+    validate_change(changeset, :lkp_at, fn :lkp_at, lkp_at ->
+      if DateTime.compare(lkp_at, DateTime.utc_now()) == :gt do
+        [lkp_at: "cannot be in the future"]
+      else
+        []
+      end
+    end)
   end
 end

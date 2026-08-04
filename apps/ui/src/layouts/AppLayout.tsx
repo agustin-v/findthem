@@ -1,9 +1,8 @@
 import { Outlet, useNavigate, useMatches } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
+import { UserButton } from '@clerk/react'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { ThemeSwitcher } from '@/components/shared/ThemeSwitcher'
-import { useAuth } from '@/hooks/useAuth'
 import { useSearch } from '@/hooks/useSearches'
 
 function BreadcrumbSegment({ searchId }: { searchId: string }) {
@@ -19,7 +18,6 @@ function BreadcrumbSegment({ searchId }: { searchId: string }) {
 
 export function AppLayout() {
   const { t } = useTranslation('common')
-  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const matches = useMatches()
 
@@ -27,11 +25,6 @@ export function AppLayout() {
     (m) => m.routeId === '/dashboard/search/$searchId',
   )
   const searchId = (detailMatch?.params as { searchId?: string })?.searchId
-
-  const handleLogout = () => {
-    logout()
-    navigate({ to: '/' })
-  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -47,18 +40,7 @@ export function AppLayout() {
           <span className="text-muted-foreground/40">·</span>
           <LanguageSwitcher />
           <span className="text-muted-foreground/40">·</span>
-          <span className="text-[13px] text-muted-foreground">
-            {user?.name || user?.email}
-          </span>
-          <span className="text-muted-foreground/40">·</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="min-h-[44px] text-[13px] text-muted-foreground"
-            onClick={handleLogout}
-          >
-            {t('logout')}
-          </Button>
+          <UserButton />
         </div>
       </header>
       <main className="flex-1">

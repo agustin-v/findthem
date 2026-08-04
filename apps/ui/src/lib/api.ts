@@ -1,22 +1,6 @@
 import { latLngToCell, gridDisk } from 'h3-js'
+import { apiClient } from './api-client'
 import type { Zone, ZoneStatus, ZonesResponse } from './zones'
-
-export interface LoginInput {
-  email: string
-  password: string
-}
-
-export interface SignupInput {
-  fullName: string
-  email: string
-  password: string
-  confirmPassword: string
-}
-
-export interface User {
-  name: string
-  email: string
-}
 
 export interface Search {
   id: string
@@ -50,123 +34,101 @@ export interface CreateSearchInput {
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-// --- Search store (session-scoped mock persistence) ---
+// --- Real backend mapping (apps/api) ---
+// The API returns snake_case; these types/mapper translate it to the
+// camelCase shape the rest of the UI already expects.
 
-let nextSearchId = 3
-const searchStore = new Map<string, SearchDetail>()
+interface RemoteSearch {
+  id: string
+  subject_type: 'person' | 'animal' | 'object'
+  subject_name: string
+  subject_details: Record<string, unknown>
+  status: 'active' | 'suspended' | 'resolved'
+  lkp_lat: number | null
+  lkp_lng: number | null
+  lkp_address: string | null
+  lkp_at: string | null
+  inserted_at: string
+  volunteer_count: number
+  zones_searched: number
+  total_zones: number
+}
+
+function mapSearch(remote: RemoteSearch): SearchDetail {
+  const details: Record<string, string> = {}
+  for (const [key, value] of Object.entries(remote.subject_details)) {
+    details[key] = String(value)
+  }
+
+  return {
+    id: remote.id,
+    subjectType: remote.subject_type,
+    subjectName: remote.subject_name,
+    status: remote.status,
+    createdAt: new Date(remote.inserted_at),
+    volunteerCount: remote.volunteer_count,
+    zonesSearched: remote.zones_searched,
+    totalZones: remote.total_zones,
+    lastSeenLocation: remote.lkp_address ?? '',
+    lastSeenAt: remote.lkp_at ?? '',
+    lastSeenCoords:
+      remote.lkp_lat != null && remote.lkp_lng != null
+        ? { lat: remote.lkp_lat, lng: remote.lkp_lng }
+        : undefined,
+    details,
+  }
+}
+
+const OMIT_FROM_SUBJECT_DETAILS = new Set([
+  'subjectType',
+  'resources',
+  'photos',
+  'phone',
+  'lastSeenLocation',
+  'lastSeenAt',
+  'lastSeenCoords',
+])
+
+function buildCreatePayload(data: CreateSearchInput) {
+  const { subjectType, name, phone, lastSeenLocation, lastSeenAt, lastSeenCoords } = data
+  const coords = lastSeenCoords as { lat: number; lng: number } | undefined
+  const rest = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !OMIT_FROM_SUBJECT_DETAILS.has(key)),
+  )
+
+  const subjectName =
+    (name as string) ?? (rest.speciesBreed as string) ?? (rest.description as string) ?? 'Unknown'
+
+  return {
+    search: {
+      subject_type: subjectType,
+      subject_name: subjectName,
+      subject_details: rest,
+      contact_phone: (phone as string) ?? '',
+      lkp_address: (lastSeenLocation as string) ?? undefined,
+      lkp_at: lastSeenAt ? new Date(lastSeenAt as string).toISOString() : undefined,
+      lkp_lat: coords?.lat,
+      lkp_lng: coords?.lng,
+    },
+  }
+}
 
 export const api = {
-  auth: {
-    login: async (data: LoginInput) => {
-      await delay(1000)
-      return { token: 'mock_token', user: { name: 'Test User', email: data.email } }
-    },
-    signup: async (data: SignupInput) => {
-      await delay(1000)
-      return { token: 'mock_token', user: { name: data.fullName, email: data.email } }
-    },
-  },
   searches: {
     list: async (): Promise<Search[]> => {
-      await delay(800)
-      const hardcoded: Search[] = [
-        {
-          id: '1',
-          subjectType: 'person',
-          subjectName: 'Marco Rossi',
-          status: 'active',
-          createdAt: new Date(Date.now() - 3600000 * 2),
-          volunteerCount: 4,
-          zonesSearched: 3,
-          totalZones: 19,
-        },
-        {
-          id: '2',
-          subjectType: 'animal',
-          subjectName: 'Golden Retriever — Lupo',
-          status: 'resolved',
-          createdAt: new Date(Date.now() - 3600000 * 48),
-          volunteerCount: 6,
-          zonesSearched: 19,
-          totalZones: 19,
-        },
-      ]
-      const dynamic = [...searchStore.values()] as Search[]
-      return [...dynamic, ...hardcoded]
+      const { data } = await apiClient.get<{ data: RemoteSearch[] }>('/api/searches')
+      return data.map(mapSearch)
     },
     getById: async (id: string): Promise<SearchDetail> => {
-      await delay(600)
-      const details: Record<string, SearchDetail> = {
-        '1': {
-          id: '1',
-          subjectType: 'person',
-          subjectName: 'Marco Rossi',
-          status: 'active',
-          createdAt: new Date(Date.now() - 3600000 * 2),
-          volunteerCount: 4,
-          zonesSearched: 3,
-          totalZones: 19,
-          lastSeenLocation: 'Via del Corso 12, Roma',
-          lastSeenAt: '2026-05-07T14:30:00Z',
-          lastSeenCoords: { lat: 41.9028, lng: 12.4964 },
-          details: {
-            age: '72',
-            physicalDescription: '175cm, grey hair, brown eyes',
-            healthNotes: 'Mild dementia',
-            phone: '+39 06 1234567',
-          },
-        },
-        '2': {
-          id: '2',
-          subjectType: 'animal',
-          subjectName: 'Golden Retriever — Lupo',
-          status: 'resolved',
-          createdAt: new Date(Date.now() - 3600000 * 48),
-          volunteerCount: 6,
-          zonesSearched: 19,
-          totalZones: 19,
-          lastSeenLocation: 'Parco della Caffarella, Roma',
-          lastSeenAt: '2026-05-05T10:00:00Z',
-          lastSeenCoords: { lat: 41.8614, lng: 12.5244 },
-          details: {
-            speciesBreed: 'Golden Retriever',
-            behaviourNotes: 'Friendly, responds to "Lupo"',
-            microchip: '380260000123456',
-          },
-        },
-      }
-      const result = searchStore.get(id) ?? details[id]
-      if (!result) throw new Error('Search not found')
-      return result
+      const { data } = await apiClient.get<{ data: RemoteSearch }>(`/api/searches/${id}`)
+      return mapSearch(data)
     },
     create: async (data: CreateSearchInput) => {
-      await delay(1000)
-      const id = String(nextSearchId++)
-      const subjectName =
-        (data.name as string) ??
-        (data.speciesBreed as string) ??
-        (data.description as string) ??
-        'Unknown'
-      const coords = data.lastSeenCoords as { lat: number; lng: number } | undefined
-      const detail: SearchDetail = {
-        id,
-        subjectType: data.subjectType,
-        subjectName,
-        status: 'active',
-        createdAt: new Date(),
-        volunteerCount: 0,
-        zonesSearched: 0,
-        totalZones: 0,
-        lastSeenLocation: (data.lastSeenLocation as string) ?? '',
-        lastSeenAt: (data.lastSeenAt as string) ?? new Date().toISOString(),
-        lastSeenCoords: coords,
-        details: {},
-      }
-      searchStore.set(id, detail)
-      if (coords) {
-        SEARCH_CENTERS[id] = coords
-      }
-      return { id, ...data }
+      const { data: created } = await apiClient.post<{ data: RemoteSearch }>(
+        '/api/searches',
+        buildCreatePayload(data),
+      )
+      return mapSearch(created)
     },
   },
   volunteers: {

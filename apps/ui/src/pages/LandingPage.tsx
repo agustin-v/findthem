@@ -1,10 +1,18 @@
 import { useTranslation } from 'react-i18next'
+import { SignIn, SignUp } from '@clerk/react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
-import { LoginForm } from '@/components/auth/LoginForm'
-import { SignupForm } from '@/components/auth/SignupForm'
 import { JoinSearchInput } from '@/components/auth/JoinSearchInput'
 import { AuthLayout } from '@/layouts/AuthLayout'
+
+const clerkAppearance = {
+  elements: {
+    rootBox: 'w-full',
+    cardBox: 'w-full shadow-none',
+    card: 'w-full shadow-none border-none p-0',
+    footer: 'hidden',
+  },
+}
 
 export function LandingPage() {
   const { t } = useTranslation()
@@ -27,10 +35,18 @@ export function LandingPage() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="signin" className="pt-3">
-            <LoginForm />
+            <SignIn
+              routing="hash"
+              forceRedirectUrl="/dashboard"
+              appearance={clerkAppearance}
+            />
           </TabsContent>
           <TabsContent value="signup" className="pt-3">
-            <SignupForm />
+            <SignUp
+              routing="hash"
+              forceRedirectUrl="/dashboard"
+              appearance={clerkAppearance}
+            />
           </TabsContent>
         </Tabs>
 

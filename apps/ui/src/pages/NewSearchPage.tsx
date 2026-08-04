@@ -12,6 +12,7 @@ import { useCreateSearch } from '@/hooks/useSearches'
 import { useSearchCreationStore } from '@/stores/useSearchCreationStore'
 import { generateSegments } from '@/lib/geo-api'
 import { useGeoSegmentsStore } from '@/stores/useGeoSegmentsStore'
+import { ApiError } from '@/lib/api-client'
 import type {
   SubjectData,
   PersonData,
@@ -155,9 +156,19 @@ export function NewSearchPage() {
             onBack={() => setStep(3)}
             onSubmit={handleCreate}
             isSubmitting={createSearch.isPending}
+            error={createSearch.isError ? formatCreateError(createSearch.error) : undefined}
           />
         )}
       </div>
     </div>
   )
+}
+
+function formatCreateError(error: unknown): string {
+  if (error instanceof ApiError && error.errors) {
+    return Object.entries(error.errors)
+      .map(([field, messages]) => `${field} ${messages.join(', ')}`)
+      .join('; ')
+  }
+  return 'Could not create the search. Please try again.'
 }

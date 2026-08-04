@@ -19,6 +19,7 @@ interface ReviewStepProps {
   onBack: () => void
   onSubmit: () => void
   isSubmitting: boolean
+  error?: string
 }
 
 function ReviewRow({ label, value }: { label: string; value?: string }) {
@@ -140,6 +141,7 @@ export function ReviewStep({
   onBack,
   onSubmit,
   isSubmitting,
+  error,
 }: ReviewStepProps) {
   const { t } = useTranslation('search')
   const { t: tc } = useTranslation('common')
@@ -199,6 +201,8 @@ export function ReviewStep({
       )}
 
       <p className="text-[13px] text-muted-foreground">{t('reviewNote')}</p>
+
+      {error && <p className="text-[13px] text-destructive">{error}</p>}
 
       <div className="flex gap-3 pt-1">
         <Button

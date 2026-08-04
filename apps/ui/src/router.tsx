@@ -10,6 +10,7 @@ import { LandingPage } from '@/pages/LandingPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { NewSearchPage } from '@/pages/NewSearchPage'
 import { SearchDetailPage } from '@/pages/SearchDetailPage'
+import { isAuthenticated } from '@/lib/auth-bridge'
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -19,6 +20,9 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: LandingPage,
+  beforeLoad: () => {
+    if (isAuthenticated()) throw redirect({ to: '/dashboard' })
+  },
 })
 
 const dashboardRoute = createRoute({
@@ -26,8 +30,7 @@ const dashboardRoute = createRoute({
   path: '/dashboard',
   component: AppLayout,
   beforeLoad: () => {
-    const token = localStorage.getItem('findthem_token')
-    if (!token) throw redirect({ to: '/' })
+    if (!isAuthenticated()) throw redirect({ to: '/' })
   },
 })
 

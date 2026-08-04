@@ -49,5 +49,9 @@ defmodule FindThemApiWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+
+  plug CORSPlug, origin: &FindThemApiWeb.Endpoint.cors_origins/0
   plug FindThemApiWeb.Router
+
+  def cors_origins, do: Application.get_env(:findthem_api, :cors_origins, [])
 end

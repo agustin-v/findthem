@@ -7,12 +7,12 @@ defmodule FindThemApiWeb.SearchVolunteerJSON do
     %{data: data(volunteer)}
   end
 
-  defp data({%FindThemApi.Volunteers.Volunteer{} = volunteer, zones_searched}) do
-    volunteer |> base() |> Map.put(:zones_searched, zones_searched)
+  defp data({%FindThemApi.Volunteers.Volunteer{} = volunteer, segments_searched}) do
+    volunteer |> base() |> Map.put(:segments_searched, segments_searched)
   end
 
   defp data(%FindThemApi.Volunteers.Volunteer{} = volunteer) do
-    volunteer |> base() |> Map.put(:zones_searched, nil)
+    volunteer |> base() |> Map.put(:segments_searched, nil)
   end
 
   defp base(volunteer) do

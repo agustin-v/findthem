@@ -1,7 +1,7 @@
 defmodule FindThemApiWeb.VolunteerSearchController do
   use FindThemApiWeb, :controller
 
-  alias FindThemApi.{Searches, Zones}
+  alias FindThemApi.{Searches, Segments, SegmentAssignments}
 
   action_fallback FindThemApiWeb.FallbackController
 
@@ -9,10 +9,16 @@ defmodule FindThemApiWeb.VolunteerSearchController do
     volunteer = conn.assigns.current_volunteer
 
     with {:ok, search} <- Searches.get_search(volunteer.search_id) do
-      zones = Zones.list_by_search(volunteer.search_id)
+      segments = Segments.list_by_search(volunteer.search_id)
       generation = Searches.latest_generation(volunteer.search_id)
+      my_segment_ids = SegmentAssignments.list_segment_ids_for_volunteer(volunteer.search_id, volunteer.id)
 
-      render(conn, :show, search: search, zones: zones, generation: generation)
+      render(conn, :show,
+        search: search,
+        segments: segments,
+        generation: generation,
+        my_segment_ids: my_segment_ids
+      )
     end
   end
 end

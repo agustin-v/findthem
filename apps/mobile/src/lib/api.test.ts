@@ -7,7 +7,7 @@ import {
   isAuthError,
   isNotFoundError,
   joinSearch,
-  updateZoneStatus,
+  updateSegmentStatus,
 } from './api';
 
 const mockFetch = vi.fn();
@@ -135,7 +135,7 @@ describe('getVolunteerSession', () => {
 });
 
 describe('getVolunteerSearch', () => {
-  it('maps the search and zones, attaching the bearer token', async () => {
+  it('maps the search, segments, and generation, attaching the bearer token', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () =>
@@ -153,9 +153,22 @@ describe('getVolunteerSearch', () => {
               lkp_address: 'Via del Corso',
               lkp_at: '2026-08-01T10:00:00Z',
             },
-            zones: [
-              { h3_index: '891f1d48177ffff', status: 'not_assigned', segment_id: '0', searched_at: null },
-            ],
+            segments: [{ segment_id: 0, status: 'not_assigned', searched_at: null }],
+            generation: {
+              response: {
+                segments: {
+                  type: 'FeatureCollection',
+                  features: [
+                    {
+                      type: 'Feature',
+                      properties: { segment_id: 0, searchable: true },
+                      geometry: { type: 'Polygon', coordinates: [] },
+                    },
+                  ],
+                },
+              },
+            },
+            my_segment_ids: [0],
           },
         }),
     });
@@ -174,30 +187,61 @@ describe('getVolunteerSearch', () => {
       lkpAddress: 'Via del Corso',
       lkpAt: '2026-08-01T10:00:00Z',
     });
-    expect(result.zones).toEqual([
-      { h3Index: '891f1d48177ffff', status: 'not_assigned', segmentId: '0', searchedAt: null },
-    ]);
+    expect(result.segments).toEqual([{ segmentId: 0, status: 'not_assigned', searchedAt: null }]);
+    expect(result.generation?.segments.features).toHaveLength(1);
+    expect(result.mySegmentIds).toEqual([0]);
     const [url, init] = mockFetch.mock.calls[0];
     expect(url).toContain('/volunteer/search');
     expect(init.headers.Authorization).toBe('Bearer the-token');
   });
-});
 
-describe('updateZoneStatus', () => {
-  it('PATCHes the zone status and maps the response', async () => {
+  it('maps a null generation when the search has never been generated', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () =>
         Promise.resolve({
-          data: { h3_index: '891f1d48177ffff', status: 'searched', segment_id: '0', searched_at: '2026-08-04T10:00:00Z' },
+          data: {
+            search: {
+              id: 'search-1',
+              subject_type: 'person',
+              subject_name: 'Marco Rossi',
+              subject_details: {},
+              status: 'active',
+              contact_phone: '+390612345',
+              lkp_lat: null,
+              lkp_lng: null,
+              lkp_address: null,
+              lkp_at: null,
+            },
+            segments: [],
+            generation: null,
+            my_segment_ids: [],
+          },
         }),
     });
 
-    const result = await updateZoneStatus('the-token', '891f1d48177ffff', 'searched');
+    const result = await getVolunteerSearch('the-token');
+
+    expect(result.generation).toBeNull();
+    expect(result.mySegmentIds).toEqual([]);
+  });
+});
+
+describe('updateSegmentStatus', () => {
+  it('PATCHes the segment status and maps the response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: { segment_id: 0, status: 'searched', searched_at: '2026-08-04T10:00:00Z' },
+        }),
+    });
+
+    const result = await updateSegmentStatus('the-token', 0, 'searched');
 
     expect(result.status).toBe('searched');
     const [url, init] = mockFetch.mock.calls[0];
-    expect(url).toContain('/volunteer/zones/891f1d48177ffff');
+    expect(url).toContain('/volunteer/segments/0');
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body)).toEqual({ status: 'searched' });
   });

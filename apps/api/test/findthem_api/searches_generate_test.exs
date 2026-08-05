@@ -3,7 +3,7 @@ defmodule FindThemApi.SearchesGenerateTest do
 
   import Mox
 
-  alias FindThemApi.{Accounts, Searches, Volunteers, Zones}
+  alias FindThemApi.{Accounts, Searches, Volunteers, Segments}
   alias FindThemApi.Geo.ClientMock
 
   setup :verify_on_exit!
@@ -23,69 +23,62 @@ defmodule FindThemApi.SearchesGenerateTest do
     %{search: search}
   end
 
-  defp geo_response(segments) do
+  defp geo_response(segment_ids) do
     %{
       "segments" => %{
         "type" => "FeatureCollection",
         "features" =>
-          Enum.map(segments, fn {segment_id, cells} ->
+          Enum.map(segment_ids, fn segment_id ->
             %{
               "type" => "Feature",
               "geometry" => %{"type" => "Polygon", "coordinates" => []},
               "properties" => %{
                 "segment_id" => segment_id,
-                "cell_count" => length(cells),
-                "cells" => cells
+                "cell_count" => 12
               }
             }
           end)
       },
       "restricted_areas" => %{"type" => "FeatureCollection", "features" => []},
-      "meta" => %{"total_cells" => Enum.sum(Enum.map(segments, fn {_, c} -> length(c) end))}
+      "meta" => %{"total_segments" => length(segment_ids)}
     }
   end
 
-  test "generate/2 persists a generation and seeds zones with segment ids", %{search: search} do
-    expect(ClientMock, :generate_segments, fn _params ->
-      {:ok, geo_response([{0, ["891f1d48177ffff", "891f1d48178ffff"]}])}
-    end)
+  test "generate/2 persists a generation and seeds segments", %{search: search} do
+    expect(ClientMock, :generate_segments, fn _params -> {:ok, geo_response([0, 1])} end)
 
     {:ok, generation} = Searches.generate(search, %{"radius_km" => 1.0})
 
     assert generation.search_id == search.id
 
-    zones = Zones.list_by_search(search.id) |> Enum.sort_by(& &1.h3_index)
-    assert length(zones) == 2
-    assert Enum.map(zones, & &1.status) == ["not_assigned", "not_assigned"]
-    assert Enum.map(zones, & &1.segment_id) == ["0", "0"]
+    segments = Segments.list_by_search(search.id) |> Enum.sort_by(& &1.segment_id)
+    assert length(segments) == 2
+    assert Enum.map(segments, & &1.status) == ["not_assigned", "not_assigned"]
+    assert Enum.map(segments, & &1.segment_id) == [0, 1]
   end
 
-  test "generate/2 strips cells from the persisted response but still seeds zones from them", %{
-    search: search
-  } do
-    expect(ClientMock, :generate_segments, fn _params ->
-      {:ok, geo_response([{0, ["891f1d48177ffff"]}])}
+  test "generate/2 no longer requests or persists cells (segments carry their own polygon geometry)",
+       %{search: search} do
+    expect(ClientMock, :generate_segments, fn params ->
+      refute Map.has_key?(params, "include_cells")
+      {:ok, geo_response([0])}
     end)
 
     {:ok, generation} = Searches.generate(search, %{"radius_km" => 1.0})
 
     [feature] = generation.response["segments"]["features"]
     refute Map.has_key?(feature["properties"], "cells")
-    assert length(Zones.list_by_search(search.id)) == 1
+    assert length(Segments.list_by_search(search.id)) == 1
   end
 
-  test "regenerating preserves an existing zone's searched status (must not wipe volunteer progress)",
+  test "regenerating resets segment progress (segment numbering isn't stable across regenerates)",
        %{search: search} do
-    expect(ClientMock, :generate_segments, fn _params ->
-      {:ok, geo_response([{0, ["891f1d48177ffff", "891f1d48178ffff"]}])}
-    end)
+    expect(ClientMock, :generate_segments, fn _params -> {:ok, geo_response([0, 1])} end)
 
     {:ok, _} = Searches.generate(search, %{"radius_km" => 1.0})
-    {:ok, _} = Zones.upsert_zone(search.id, "891f1d48177ffff", %{status: "searched"})
+    {:ok, _} = Segments.update_segment_status(search.id, 0, %{status: "searched"})
 
-    expect(ClientMock, :generate_segments, fn _params ->
-      {:ok, geo_response([{0, ["891f1d48177ffff", "891f1d48178ffff"]}])}
-    end)
+    expect(ClientMock, :generate_segments, fn _params -> {:ok, geo_response([0, 1])} end)
 
     # Re-fetch — generate/2 persists radius_km onto the search row, and (like
     # the real controller, which re-fetches per request) a "later call" here
@@ -93,9 +86,27 @@ defmodule FindThemApi.SearchesGenerateTest do
     refreshed_search = Searches.get_search!(search.id)
     {:ok, _second_generation} = Searches.generate(refreshed_search, %{})
 
-    zones = Zones.list_by_search(search.id)
-    searched = Enum.find(zones, &(&1.h3_index == "891f1d48177ffff"))
-    assert searched.status == "searched"
+    segments = Segments.list_by_search(search.id)
+    reseeded = Enum.find(segments, &(&1.segment_id == 0))
+    assert reseeded.status == "not_assigned"
+  end
+
+  test "regenerating clears segment assignments (segment numbering isn't stable across regenerates)",
+       %{search: search} do
+    expect(ClientMock, :generate_segments, fn _params -> {:ok, geo_response([0, 1])} end)
+    {:ok, _} = Searches.generate(search, %{"radius_km" => 1.0})
+
+    {:ok, volunteer} =
+      Volunteers.join_volunteer(search.id, %{name: "Giulia", phone: "+390698765"})
+
+    {:ok, volunteer} = Volunteers.set_status(volunteer, "approved")
+    {:ok, _} = FindThemApi.SegmentAssignments.assign(search.id, 0, volunteer.id)
+
+    expect(ClientMock, :generate_segments, fn _params -> {:ok, geo_response([0, 1])} end)
+    refreshed_search = Searches.get_search!(search.id)
+    {:ok, _} = Searches.generate(refreshed_search, %{})
+
+    assert FindThemApi.SegmentAssignments.list_by_search(search.id) == []
   end
 
   test "generate/2 propagates :geo_unavailable and persists nothing", %{search: search} do
@@ -103,7 +114,7 @@ defmodule FindThemApi.SearchesGenerateTest do
 
     assert {:error, :geo_unavailable} = Searches.generate(search, %{"radius_km" => 1.0})
     assert Searches.latest_generation(search.id) == nil
-    assert Zones.list_by_search(search.id) == []
+    assert Segments.list_by_search(search.id) == []
   end
 
   test "generate/2 requires radius_km on the first call for a search that has none", %{

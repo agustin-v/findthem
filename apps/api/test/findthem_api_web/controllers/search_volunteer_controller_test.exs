@@ -47,7 +47,7 @@ defmodule FindThemApiWeb.SearchVolunteerControllerTest do
     }
   end
 
-  test "GET /api/searches/:id/volunteers lists volunteers with zones_searched", %{
+  test "GET /api/searches/:id/volunteers lists volunteers with segments_searched", %{
     conn: conn,
     search: search
   } do
@@ -59,7 +59,7 @@ defmodule FindThemApiWeb.SearchVolunteerControllerTest do
     assert %{"data" => [volunteer]} = json_response(conn, 200)
     assert volunteer["name"] == "Pending"
     assert volunteer["status"] == "pending"
-    assert volunteer["zones_searched"] == 0
+    assert volunteer["segments_searched"] == 0
   end
 
   test "GET /api/searches/:id/volunteers for a search owned by another user returns 404", %{

@@ -20,8 +20,8 @@ const remoteSearch = {
   lkp_at: '2026-08-01T10:00:00Z',
   inserted_at: '2026-08-01T09:00:00Z',
   volunteer_count: 2,
-  zones_searched: 3,
-  total_zones: 10,
+  segments_searched: 3,
+  total_segments: 10,
   join_token: 'ABCDE12345',
 }
 
@@ -104,7 +104,7 @@ describe('api.volunteers.listBySearch', () => {
               joined_at: '2026-08-01T10:00:00Z',
               approved_at: null,
               removed_at: null,
-              zones_searched: 0,
+              segments_searched: 0,
             },
           ],
         }),
@@ -123,7 +123,7 @@ describe('api.volunteers.listBySearch', () => {
         joinedAt: '2026-08-01T10:00:00Z',
         approvedAt: null,
         removedAt: null,
-        zonesSearched: 0,
+        segmentsSearched: 0,
       },
     ])
   })
@@ -214,7 +214,7 @@ describe('api.volunteers.setStatus', () => {
             joined_at: '2026-08-01T10:00:00Z',
             approved_at: '2026-08-01T10:05:00Z',
             removed_at: null,
-            zones_searched: 0,
+            segments_searched: 0,
           },
         }),
     })
@@ -226,5 +226,107 @@ describe('api.volunteers.setStatus', () => {
     expect(url).toContain('/api/searches/search-1/volunteers/vol-1')
     expect(init.method).toBe('PATCH')
     expect(JSON.parse(init.body)).toEqual({ status: 'approved' })
+  })
+})
+
+describe('api.segments.getBySearch', () => {
+  it('maps remote snake_case segment status rows to the UI shape', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            { segment_id: 0, status: 'not_assigned', searched_at: null },
+            { segment_id: 1, status: 'searched', searched_at: '2026-08-05T10:00:00Z' },
+          ],
+        }),
+    })
+
+    const result = await api.segments.getBySearch('search-1')
+
+    expect(result).toEqual([
+      { segmentId: 0, status: 'not_assigned', searchedAt: null },
+      { segmentId: 1, status: 'searched', searchedAt: '2026-08-05T10:00:00Z' },
+    ])
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/segments')
+  })
+})
+
+describe('api.segments.updateStatus', () => {
+  it('PATCHes the segment status and maps the response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: { segment_id: 3, status: 'searched', searched_at: '2026-08-05T10:00:00Z' },
+        }),
+    })
+
+    const result = await api.segments.updateStatus('search-1', 3, 'searched')
+
+    expect(result).toEqual({ segmentId: 3, status: 'searched', searchedAt: '2026-08-05T10:00:00Z' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/segments/3')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual({ status: 'searched' })
+  })
+})
+
+describe('api.segmentAssignments.getBySearch', () => {
+  it('maps remote snake_case assignment rows to the UI shape', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            { segment_id: 0, volunteer_id: 'vol-1', assigned_at: '2026-08-05T10:00:00Z' },
+          ],
+        }),
+    })
+
+    const result = await api.segmentAssignments.getBySearch('search-1')
+
+    expect(result).toEqual([
+      { segmentId: 0, volunteerId: 'vol-1', assignedAt: '2026-08-05T10:00:00Z' },
+    ])
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/segment_assignments')
+  })
+})
+
+describe('api.segmentAssignments.assign', () => {
+  it('POSTs segment_id/volunteer_id and maps the response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          data: { segment_id: 0, volunteer_id: 'vol-1', assigned_at: '2026-08-05T10:00:00Z' },
+        }),
+    })
+
+    const result = await api.segmentAssignments.assign('search-1', 0, 'vol-1')
+
+    expect(result).toEqual({ segmentId: 0, volunteerId: 'vol-1', assignedAt: '2026-08-05T10:00:00Z' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/segment_assignments')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ segment_id: 0, volunteer_id: 'vol-1' })
+  })
+})
+
+describe('api.segmentAssignments.unassign', () => {
+  it('DELETEs the assignment', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 204 })
+
+    await api.segmentAssignments.unassign('search-1', 0, 'vol-1')
+
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/segment_assignments/0/vol-1')
+    expect(init.method).toBe('DELETE')
   })
 })

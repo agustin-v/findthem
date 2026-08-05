@@ -1,11 +1,12 @@
 defmodule FindThemApiWeb.VolunteerSearchJSON do
   # No photos, no coordinator PII beyond contact_phone, no join_token.
-  def show(%{search: search, zones: zones, generation: generation}) do
+  def show(%{search: search, segments: segments, generation: generation, my_segment_ids: my_segment_ids}) do
     %{
       data: %{
         search: search_data(search),
-        zones: Enum.map(zones, &zone_data/1),
-        generation: generation_data(generation)
+        segments: Enum.map(segments, &segment_data/1),
+        generation: generation_data(generation),
+        my_segment_ids: my_segment_ids
       }
     }
   end
@@ -27,12 +28,11 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
     }
   end
 
-  defp zone_data(zone) do
+  defp segment_data(segment) do
     %{
-      h3_index: zone.h3_index,
-      status: zone.status,
-      segment_id: zone.segment_id,
-      searched_at: zone.searched_at
+      segment_id: segment.segment_id,
+      status: segment.status,
+      searched_at: segment.searched_at
     }
   end
 

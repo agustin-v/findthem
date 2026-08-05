@@ -22,6 +22,30 @@ defmodule FindThemApiWeb.FallbackController do
     |> json(%{errors: %{status: ["must be approved or removed"]}})
   end
 
+  def call(conn, {:error, :invalid_segment_id}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{segment_id: ["must be an integer"]}})
+  end
+
+  def call(conn, {:error, :invalid_volunteer_id}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{volunteer_id: ["is required"]}})
+  end
+
+  def call(conn, {:error, :segment_not_found}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{segment_id: ["does not exist for this search"]}})
+  end
+
+  def call(conn, {:error, :volunteer_not_approved}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{volunteer_id: ["must be an approved volunteer"]}})
+  end
+
   def call(conn, {:error, :radius_km_required}) do
     conn
     |> put_status(:unprocessable_entity)

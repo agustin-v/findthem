@@ -4,7 +4,7 @@ defmodule FindThemApiWeb.GenerationControllerTest do
   import FindThemApi.ClerkFixtures
   import Mox
 
-  alias FindThemApi.{Accounts, Searches, Zones}
+  alias FindThemApi.{Accounts, Searches, Segments}
   alias FindThemApi.Geo.ClientMock
 
   setup :verify_on_exit!
@@ -34,18 +34,17 @@ defmodule FindThemApiWeb.GenerationControllerTest do
             "geometry" => %{"type" => "Polygon", "coordinates" => []},
             "properties" => %{
               "segment_id" => 0,
-              "cell_count" => 1,
-              "cells" => ["891f1d48177ffff"]
+              "cell_count" => 1
             }
           }
         ]
       },
       "restricted_areas" => %{"type" => "FeatureCollection", "features" => []},
-      "meta" => %{"total_cells" => 1}
+      "meta" => %{"total_segments" => 1}
     }
   end
 
-  test "POST /api/searches/:id/generate persists a generation and seeds zones", %{
+  test "POST /api/searches/:id/generate persists a generation and seeds segments", %{
     conn: conn,
     search: search
   } do
@@ -56,7 +55,7 @@ defmodule FindThemApiWeb.GenerationControllerTest do
     assert %{"data" => data} = json_response(conn, 201)
     [feature] = data["response"]["segments"]["features"]
     refute Map.has_key?(feature["properties"], "cells")
-    assert length(Zones.list_by_search(search.id)) == 1
+    assert length(Segments.list_by_search(search.id)) == 1
   end
 
   test "POST without radius_km on a search that has none returns 422", %{
@@ -126,7 +125,7 @@ defmodule FindThemApiWeb.GenerationControllerTest do
 
     assert %{"data" => data} = json_response(conn, 200)
     refute is_nil(data)
-    assert data["meta"]["total_cells"] == 1
+    assert data["meta"]["total_segments"] == 1
   end
 
   test "GET generations/latest for a search owned by another user returns 404", %{conn: conn} do

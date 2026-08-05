@@ -1,4 +1,5 @@
-import type { ZoneStatus } from './zones';
+import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
+import type { SegmentProperties, SegmentStatus } from './segments';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
 const REQUEST_TIMEOUT_MS = 10000;
@@ -149,23 +150,37 @@ export interface VolunteerSearchInfo {
   lkpAt: string | null;
 }
 
-export interface VolunteerZone {
-  h3Index: string;
-  status: ZoneStatus;
-  segmentId: string | null;
+export interface VolunteerSegment {
+  segmentId: number;
+  status: SegmentStatus;
   searchedAt: string | null;
+}
+
+// The polygon geometry itself — apps/geo's own segment shapes, persisted
+// as-is on the Generation and returned here so the volunteer app never
+// needs to reconstruct geometry client-side (unlike the old h3-js-based
+// per-cell zones, this is real GeoJSON straight from apps/geo).
+export interface VolunteerGeneration {
+  segments: FeatureCollection<Polygon | MultiPolygon, SegmentProperties>;
 }
 
 export interface VolunteerSearchData {
   search: VolunteerSearchInfo;
-  zones: VolunteerZone[];
+  segments: VolunteerSegment[];
+  generation: VolunteerGeneration | null;
+  mySegmentIds: number[];
 }
 
-interface RemoteZone {
-  h3_index: string;
-  status: ZoneStatus;
-  segment_id: string | null;
+interface RemoteSegment {
+  segment_id: number;
+  status: SegmentStatus;
   searched_at: string | null;
+}
+
+interface RemoteGeneration {
+  response: {
+    segments: FeatureCollection<Polygon | MultiPolygon, SegmentProperties>;
+  };
 }
 
 interface RemoteVolunteerSearchData {
@@ -181,15 +196,16 @@ interface RemoteVolunteerSearchData {
     lkp_address: string | null;
     lkp_at: string | null;
   };
-  zones: RemoteZone[];
+  segments: RemoteSegment[];
+  generation: RemoteGeneration | null;
+  my_segment_ids: number[];
 }
 
-function mapVolunteerZone(zone: RemoteZone): VolunteerZone {
+function mapVolunteerSegment(segment: RemoteSegment): VolunteerSegment {
   return {
-    h3Index: zone.h3_index,
-    status: zone.status,
-    segmentId: zone.segment_id,
-    searchedAt: zone.searched_at,
+    segmentId: segment.segment_id,
+    status: segment.status,
+    searchedAt: segment.searched_at,
   };
 }
 
@@ -211,17 +227,19 @@ export async function getVolunteerSearch(token: string): Promise<VolunteerSearch
       lkpAddress: data.search.lkp_address,
       lkpAt: data.search.lkp_at,
     },
-    zones: data.zones.map(mapVolunteerZone),
+    segments: data.segments.map(mapVolunteerSegment),
+    generation: data.generation ? { segments: data.generation.response.segments } : null,
+    mySegmentIds: data.my_segment_ids,
   };
 }
 
-export async function updateZoneStatus(
+export async function updateSegmentStatus(
   token: string,
-  h3Index: string,
-  status: ZoneStatus,
-): Promise<VolunteerZone> {
-  const { data } = await request<{ data: RemoteZone }>(
-    `/volunteer/zones/${encodeURIComponent(h3Index)}`,
+  segmentId: number,
+  status: SegmentStatus,
+): Promise<VolunteerSegment> {
+  const { data } = await request<{ data: RemoteSegment }>(
+    `/volunteer/segments/${segmentId}`,
     {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}` },
@@ -229,7 +247,7 @@ export async function updateZoneStatus(
     },
   );
 
-  return mapVolunteerZone(data);
+  return mapVolunteerSegment(data);
 }
 
 export type RemarkKind = 'sighting' | 'hazard' | 'note';

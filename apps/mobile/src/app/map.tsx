@@ -6,6 +6,7 @@ import {
   type PressEventWithFeatures,
 } from '@maplibre/maplibre-react-native';
 import { useRouter } from 'expo-router';
+import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
@@ -19,48 +20,56 @@ import { Spacing } from '@/constants/theme';
 import {
   getVolunteerSearch,
   isAuthError,
-  updateZoneStatus,
+  updateSegmentStatus,
+  type VolunteerGeneration,
   type VolunteerSearchInfo,
-  type VolunteerZone,
+  type VolunteerSegment,
 } from '@/lib/api';
 import { getMapStyleUrl, hasApiKey } from '@/lib/tomtom';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 import {
-  ZONE_COLORS,
-  ZONE_FILL_OPACITY,
-  ZONE_LINE_OPACITY,
-  zonesToGeoJSON,
-  type Zone,
-  type ZoneStatus,
-} from '@/lib/zones';
+  SEGMENT_COLORS,
+  SEGMENT_FILL_OPACITY,
+  SEGMENT_LINE_OPACITY,
+  segmentsToGeoJSON,
+  type SegmentProperties,
+  type SegmentStatus,
+  type SegmentStatusInfo,
+} from '@/lib/segments';
 
 const POLL_INTERVAL_MS = 15000;
 const DEFAULT_CENTER: [number, number] = [12.4964, 41.9028];
+const EMPTY_SEGMENTS_FC: FeatureCollection<Polygon | MultiPolygon, SegmentProperties> = {
+  type: 'FeatureCollection',
+  features: [],
+};
+const MY_ASSIGNMENT_COLOR = '#fbbf24';
 
-const STATUS_LABELS: Record<ZoneStatus, string> = {
+const STATUS_LABELS: Record<SegmentStatus, string> = {
   not_assigned: 'Not started',
   assigned: 'Assigned',
   in_progress: 'In progress',
   searched: 'Searched',
 };
 
-// The legend shows one swatch per status — "searched" zones actually decay
-// through several colors over time (see zones.ts's getZoneColor), but a
-// single representative shade is enough for a compact legend.
-const LEGEND_COLORS: Record<ZoneStatus, string> = {
-  not_assigned: ZONE_COLORS.not_assigned,
-  assigned: ZONE_COLORS.assigned,
-  in_progress: ZONE_COLORS.in_progress,
-  searched: ZONE_COLORS.fresh,
+// The legend shows one swatch per status — "searched" segments actually
+// decay through several colors over time (see segments.ts's
+// getSegmentColor), but a single representative shade is enough for a
+// compact legend.
+const LEGEND_COLORS: Record<SegmentStatus, string> = {
+  not_assigned: SEGMENT_COLORS.not_assigned,
+  assigned: SEGMENT_COLORS.assigned,
+  in_progress: SEGMENT_COLORS.in_progress,
+  searched: SEGMENT_COLORS.fresh,
 };
 
 type ScreenState = 'loading' | 'ready' | 'retry' | 'expired';
 
-function toZoneModel(zone: VolunteerZone): Zone {
+function toSegmentModel(segment: VolunteerSegment): SegmentStatusInfo {
   return {
-    h3Index: zone.h3Index,
-    status: zone.status,
-    searchedAt: zone.searchedAt ? new Date(zone.searchedAt).getTime() : undefined,
+    segmentId: segment.segmentId,
+    status: segment.status,
+    searchedAt: segment.searchedAt ? new Date(segment.searchedAt).getTime() : undefined,
   };
 }
 
@@ -68,10 +77,12 @@ export default function MapScreen() {
   const router = useRouter();
   const [screenState, setScreenState] = useState<ScreenState>('loading');
   const [search, setSearch] = useState<VolunteerSearchInfo | null>(null);
-  const [zones, setZones] = useState<VolunteerZone[]>([]);
-  const [selectedZone, setSelectedZone] = useState<VolunteerZone | null>(null);
-  const [zoneActionError, setZoneActionError] = useState<string | null>(null);
-  const [updatingZone, setUpdatingZone] = useState(false);
+  const [segments, setSegments] = useState<VolunteerSegment[]>([]);
+  const [generation, setGeneration] = useState<VolunteerGeneration | null>(null);
+  const [mySegmentIds, setMySegmentIds] = useState<number[]>([]);
+  const [selectedSegment, setSelectedSegment] = useState<VolunteerSegment | null>(null);
+  const [segmentActionError, setSegmentActionError] = useState<string | null>(null);
+  const [updatingSegment, setUpdatingSegment] = useState(false);
   const [remarkFormOpen, setRemarkFormOpen] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -93,7 +104,9 @@ export default function MapScreen() {
         const data = await getVolunteerSearch(storedToken);
         if (cancelled) return;
         setSearch(data.search);
-        setZones(data.zones);
+        setSegments(data.segments);
+        setGeneration(data.generation);
+        setMySegmentIds(data.mySegmentIds);
         setScreenState('ready');
       } catch (error) {
         if (cancelled) return;
@@ -127,7 +140,9 @@ export default function MapScreen() {
       inFlight = true;
       try {
         const data = await getVolunteerSearch(token);
-        setZones(data.zones);
+        setSegments(data.segments);
+        setGeneration(data.generation);
+        setMySegmentIds(data.mySegmentIds);
       } catch (error) {
         if (isAuthError(error)) {
           await clearVolunteerToken();
@@ -142,14 +157,16 @@ export default function MapScreen() {
   }, [screenState, token]);
 
   // A lighter-weight alternative to `reload` for callers that only need
-  // fresh zone data (e.g. after posting a remark) — unlike `reload`, this
-  // doesn't reset screenState to 'loading' and blank the map with a
+  // fresh segment data (e.g. after posting a remark) — unlike `reload`,
+  // this doesn't reset screenState to 'loading' and blank the map with a
   // full-screen spinner over what the volunteer was just looking at.
-  const refreshZones = useCallback(async () => {
+  const refreshSegments = useCallback(async () => {
     if (!token) return;
     try {
       const data = await getVolunteerSearch(token);
-      setZones(data.zones);
+      setSegments(data.segments);
+      setGeneration(data.generation);
+      setMySegmentIds(data.mySegmentIds);
     } catch (error) {
       if (isAuthError(error)) {
         await clearVolunteerToken();
@@ -158,40 +175,62 @@ export default function MapScreen() {
     }
   }, [token]);
 
-  const geojson = useMemo(() => zonesToGeoJSON(zones.map(toZoneModel)), [zones]);
+  const geojson = useMemo(
+    () =>
+      segmentsToGeoJSON(
+        generation?.segments ?? EMPTY_SEGMENTS_FC,
+        segments.map(toSegmentModel),
+        mySegmentIds,
+      ),
+    [generation, segments, mySegmentIds],
+  );
 
-  const handleZonePress = useCallback(
+  const handleSegmentPress = useCallback(
     (event: NativeSyntheticEvent<PressEventWithFeatures>) => {
       // A GeoJSONSource press bubbles up to the Map's own onPress unless
-      // stopped — without this, selecting a zone would immediately
+      // stopped — without this, selecting a segment would immediately
       // deselect it again via the background-tap handler below.
       event.stopPropagation();
 
       const feature = event.nativeEvent.features[0];
-      const h3Index = feature?.properties?.h3Index as string | undefined;
-      if (!h3Index) return;
-      const zone = zones.find((z) => z.h3Index === h3Index);
-      if (zone) {
-        setZoneActionError(null);
-        setSelectedZone(zone);
+      const properties = feature?.properties as
+        | { segmentId?: number; searchable?: boolean }
+        | undefined;
+      if (properties?.segmentId == null || properties.searchable === false) return;
+
+      const segment = segments.find((s) => s.segmentId === properties.segmentId);
+      if (segment) {
+        setSegmentActionError(null);
+        setSelectedSegment(segment);
+      } else {
+        // A segment from a generation the volunteer hasn't refreshed into
+        // view yet (no status row fetched) — treat as fresh/not_assigned
+        // rather than silently doing nothing on tap.
+        setSegmentActionError(null);
+        setSelectedSegment({ segmentId: properties.segmentId, status: 'not_assigned', searchedAt: null });
       }
     },
-    [zones],
+    [segments],
   );
 
-  const handleSetZoneStatus = async (status: ZoneStatus) => {
-    if (!selectedZone || !token) return;
-    setUpdatingZone(true);
-    setZoneActionError(null);
+  const handleSetSegmentStatus = async (status: SegmentStatus) => {
+    if (!selectedSegment || !token) return;
+    setUpdatingSegment(true);
+    setSegmentActionError(null);
 
     try {
-      const updated = await updateZoneStatus(token, selectedZone.h3Index, status);
-      setZones((prev) => prev.map((z) => (z.h3Index === updated.h3Index ? updated : z)));
-      setSelectedZone(updated);
+      const updated = await updateSegmentStatus(token, selectedSegment.segmentId, status);
+      setSegments((prev) => {
+        const exists = prev.some((s) => s.segmentId === updated.segmentId);
+        return exists
+          ? prev.map((s) => (s.segmentId === updated.segmentId ? updated : s))
+          : [...prev, updated];
+      });
+      setSelectedSegment(updated);
     } catch {
-      setZoneActionError('Could not update this zone. Please try again.');
+      setSegmentActionError('Could not update this segment. Please try again.');
     } finally {
-      setUpdatingZone(false);
+      setUpdatingSegment(false);
     }
   };
 
@@ -243,23 +282,40 @@ export default function MapScreen() {
   return (
     <ThemedView style={styles.container}>
       {hasApiKey() ? (
-        <MapLibreMap mapStyle={getMapStyleUrl()} style={styles.map} onPress={() => setSelectedZone(null)}>
+        <MapLibreMap
+          mapStyle={getMapStyleUrl()}
+          style={styles.map}
+          onPress={() => setSelectedSegment(null)}>
           <Camera initialViewState={{ center, zoom: 15 }} />
-          <GeoJSONSource id="zones" data={geojson} onPress={handleZonePress}>
+          <GeoJSONSource id="segments" data={geojson} onPress={handleSegmentPress}>
             <Layer
-              id="zones-fill"
+              id="segments-fill"
               type="fill"
-              source="zones"
-              paint={{ 'fill-color': ['get', 'color'], 'fill-opacity': ZONE_FILL_OPACITY }}
+              source="segments"
+              paint={{ 'fill-color': ['get', 'color'], 'fill-opacity': SEGMENT_FILL_OPACITY }}
             />
             <Layer
-              id="zones-line"
+              id="segments-line"
               type="line"
-              source="zones"
+              source="segments"
               paint={{
                 'line-color': ['get', 'color'],
                 'line-width': 2,
-                'line-opacity': ZONE_LINE_OPACITY,
+                'line-opacity': SEGMENT_LINE_OPACITY,
+              }}
+            />
+            {/* Coordinator-assigned segments get a highlight outline — a
+                "start here" hint, not a restriction, since every approved
+                volunteer can still see and mark every segment. */}
+            <Layer
+              id="segments-my-assignment"
+              type="line"
+              source="segments"
+              filter={['==', ['get', 'assignedToMe'], true]}
+              paint={{
+                'line-color': MY_ASSIGNMENT_COLOR,
+                'line-width': 4,
+                'line-opacity': 0.9,
               }}
             />
           </GeoJSONSource>
@@ -276,12 +332,23 @@ export default function MapScreen() {
         </ThemedView>
 
         <ThemedView style={styles.legend} type="backgroundElement">
-          {(Object.keys(STATUS_LABELS) as ZoneStatus[]).map((status) => (
+          {(Object.keys(STATUS_LABELS) as SegmentStatus[]).map((status) => (
             <View key={status} style={styles.legendRow}>
               <View style={[styles.legendSwatch, { backgroundColor: LEGEND_COLORS[status] }]} />
               <ThemedText type="small">{STATUS_LABELS[status]}</ThemedText>
             </View>
           ))}
+          {mySegmentIds.length > 0 && (
+            <View style={styles.legendRow}>
+              <View
+                style={[
+                  styles.legendSwatch,
+                  { backgroundColor: 'transparent', borderWidth: 2, borderColor: MY_ASSIGNMENT_COLOR },
+                ]}
+              />
+              <ThemedText type="small">Assigned to you</ThemedText>
+            </View>
+          )}
         </ThemedView>
 
         <Pressable
@@ -295,40 +362,40 @@ export default function MapScreen() {
       </SafeAreaView>
 
       <Modal
-        visible={!!selectedZone}
+        visible={!!selectedSegment}
         animationType="slide"
         transparent
-        onRequestClose={() => setSelectedZone(null)}>
+        onRequestClose={() => setSelectedSegment(null)}>
         <View style={styles.backdrop}>
           <ThemedView style={styles.sheet}>
             <SafeAreaView style={styles.sheetContent}>
-              {selectedZone && (
+              {selectedSegment && (
                 <>
                   <ThemedText type="subtitle">
-                    {STATUS_LABELS[selectedZone.status]}
+                    {STATUS_LABELS[selectedSegment.status]}
                   </ThemedText>
-                  {zoneActionError && (
+                  {segmentActionError && (
                     <ThemedText type="small" style={styles.error}>
-                      {zoneActionError}
+                      {segmentActionError}
                     </ThemedText>
                   )}
                   <PrimaryButton
                     label="Start searching"
                     variant="secondary"
-                    onPress={() => handleSetZoneStatus('in_progress')}
-                    disabled={selectedZone.status === 'in_progress' || updatingZone}
-                    loading={updatingZone}
+                    onPress={() => handleSetSegmentStatus('in_progress')}
+                    disabled={selectedSegment.status === 'in_progress' || updatingSegment}
+                    loading={updatingSegment}
                   />
                   <PrimaryButton
                     label="Mark as searched"
-                    onPress={() => handleSetZoneStatus('searched')}
-                    disabled={selectedZone.status === 'searched' || updatingZone}
-                    loading={updatingZone}
+                    onPress={() => handleSetSegmentStatus('searched')}
+                    disabled={selectedSegment.status === 'searched' || updatingSegment}
+                    loading={updatingSegment}
                   />
                   <PrimaryButton
                     label="Close"
                     variant="secondary"
-                    onPress={() => setSelectedZone(null)}
+                    onPress={() => setSelectedSegment(null)}
                   />
                 </>
               )}
@@ -342,7 +409,7 @@ export default function MapScreen() {
           visible={remarkFormOpen}
           token={token}
           onClose={() => setRemarkFormOpen(false)}
-          onSubmitted={refreshZones}
+          onSubmitted={refreshSegments}
         />
       )}
     </ThemedView>

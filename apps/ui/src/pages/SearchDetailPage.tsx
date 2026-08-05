@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useParams } from '@tanstack/react-router'
 import maplibregl from 'maplibre-gl'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,8 @@ import { SearchInfoCard } from '@/components/search-detail/SearchInfoCard'
 import { VolunteerCard } from '@/components/search-detail/VolunteerCard'
 import { InvitePanel } from '@/components/search-detail/InvitePanel'
 import { ZoneLegend } from '@/components/search-detail/ZoneLegend'
-import { useSearch, useVolunteers } from '@/hooks/useSearches'
+import { SegmentAssignmentPanel } from '@/components/search-detail/SegmentAssignmentPanel'
+import { useSearch, useVolunteers, useSegments, useSegmentAssignments } from '@/hooks/useSearches'
 import { useSegmentLayer } from '@/hooks/useSegmentLayer'
 import { useRestrictedAreaLayer } from '@/hooks/useRestrictedAreaLayer'
 import { useGenerateSegments } from '@/hooks/useGenerateSegments'
@@ -29,6 +30,11 @@ export function SearchDetailPage() {
   const { searchId } = useParams({ strict: false }) as { searchId: string }
   const { data: search, isLoading, isError } = useSearch(searchId)
   const { data: volunteers = [], isError: isVolunteersError } = useVolunteers(searchId)
+  const { data: segmentStatuses } = useSegments(searchId)
+  const statusBySegmentId = useMemo(
+    () => new Map(segmentStatuses?.map((s) => [s.segmentId, s.status])),
+    [segmentStatuses],
+  )
   const segments = useGeoSegmentsStore((s) => s.segmentsBySearch[searchId])
   const restrictedAreas = useGeoSegmentsStore((s) => s.restrictedAreasBySearch[searchId])
   const geoLoading = useGeoSegmentsStore((s) => s.loading)
@@ -37,8 +43,10 @@ export function SearchDetailPage() {
   const setLoading = useGeoSegmentsStore((s) => s.setLoading)
   const setError = useGeoSegmentsStore((s) => s.setError)
   const generateSegments = useGenerateSegments(searchId)
+  const { data: assignments = [] } = useSegmentAssignments(searchId)
 
   const [map, setMap] = useState<maplibregl.Map | null>(null)
+  const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null)
 
   // Hydrate from the search's latest generation (apps/api). Segments are
   // only ever created via NewSearchPage's create flow — this page never
@@ -84,7 +92,12 @@ export function SearchDetailPage() {
   )
 
   // Wire layers: segments + restricted areas
-  useSegmentLayer({ map, geojson: segments ?? null })
+  useSegmentLayer({
+    map,
+    geojson: segments ?? null,
+    statusBySegmentId,
+    onSegmentClick: setSelectedSegmentId,
+  })
   useRestrictedAreaLayer({ map, geojson: restrictedAreas ?? null })
 
   if (isLoading) {
@@ -149,6 +162,17 @@ export function SearchDetailPage() {
               </Button>
             </CardContent>
           </Card>
+        )}
+        {selectedSegmentId != null && (
+          <div className="pointer-events-auto absolute bottom-4 right-4 w-72">
+            <SegmentAssignmentPanel
+              searchId={searchId}
+              segmentId={selectedSegmentId}
+              volunteers={volunteers}
+              assignments={assignments}
+              onClose={() => setSelectedSegmentId(null)}
+            />
+          </div>
         )}
       </div>
     </div>

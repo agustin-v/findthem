@@ -94,7 +94,7 @@ export function VolunteerCard({ searchId, volunteers, isError }: VolunteerCardPr
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm">{v.name}</p>
                         <p className="truncate text-[0.7rem] text-muted-foreground">
-                          {t('detail.zonesSearchedBy', { count: v.zonesSearched })}
+                          {t('detail.zonesSearchedBy', { count: v.segmentsSearched })}
                         </p>
                       </div>
                       <span

@@ -59,6 +59,15 @@
     },
     "generatingArea": "Generating search area...",
     "generateFailed": "Couldn't generate the search area.",
-    "retryGenerate": "Retry"
+    "retryGenerate": "Retry",
+    "assignment": {
+      "title": "Segment {{id}}",
+      "close": "Close",
+      "noneAssigned": "No one assigned yet",
+      "assignPlaceholder": "Assign a volunteer...",
+      "assign": "Assign",
+      "unassign": "Remove",
+      "actionFailed": "Something went wrong. Please try again."
+    }
   }
 }

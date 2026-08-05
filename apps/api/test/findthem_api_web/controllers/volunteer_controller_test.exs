@@ -1,7 +1,7 @@
 defmodule FindThemApiWeb.VolunteerControllerTest do
   use FindThemApiWeb.ConnCase, async: true
 
-  alias FindThemApi.{Accounts, Searches, Volunteers, Zones}
+  alias FindThemApi.{Accounts, Searches, Volunteers, Segments}
 
   setup do
     {:ok, owner} = Accounts.get_or_provision("user_owner_vol", %{email: "vol@example.com"})
@@ -24,6 +24,15 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
     token = Volunteers.sign_token(FindThemApiWeb.Endpoint, approved.id)
     {approved, token}
+  end
+
+  defp another_approved_volunteer(search) do
+    {:ok, volunteer} =
+      Volunteers.join_volunteer(search.id, %{name: "Luca Verdi", phone: "+390698767"})
+
+    {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
+    token = Volunteers.sign_token(FindThemApiWeb.Endpoint, approved.id)
+    {:ok, approved, token}
   end
 
   defp auth(conn, token), do: put_req_header(conn, "authorization", "Bearer #{token}")
@@ -79,8 +88,27 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert data["search"]["contact_phone"] == "+390612345"
     refute Map.has_key?(data["search"], "join_token")
     refute Map.has_key?(data["search"], "photo_urls")
-    assert data["zones"] == []
+    assert data["segments"] == []
     assert data["generation"] == nil
+    assert data["my_segment_ids"] == []
+  end
+
+  test "GET /volunteer/search reports my_segment_ids scoped to the requesting volunteer only", %{
+    conn: conn,
+    search: search
+  } do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 0}, %{segment_id: 1}])
+    {volunteer, token} = approved_volunteer(search)
+    {:ok, other, other_token} = another_approved_volunteer(search)
+
+    {:ok, _} = FindThemApi.SegmentAssignments.assign(search.id, 0, volunteer.id)
+    {:ok, _} = FindThemApi.SegmentAssignments.assign(search.id, 1, other.id)
+
+    conn1 = conn |> auth(token) |> get(~p"/volunteer/search")
+    assert %{"data" => %{"my_segment_ids" => [0]}} = json_response(conn1, 200)
+
+    conn2 = conn |> auth(other_token) |> get(~p"/volunteer/search")
+    assert %{"data" => %{"my_segment_ids" => [1]}} = json_response(conn2, 200)
   end
 
   test "removal invalidates the token immediately, without waiting for it to expire", %{
@@ -98,33 +126,46 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert json_response(conn2, 401)
   end
 
-  test "PATCH /volunteer/zones/:h3_index records the acting volunteer as searched_by", %{
+  test "PATCH /volunteer/segments/:segment_id records the acting volunteer as searched_by", %{
     conn: conn,
     search: search
   } do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
     {volunteer, token} = approved_volunteer(search)
 
     conn =
       conn
       |> auth(token)
-      |> patch(~p"/volunteer/zones/891f1d48177ffff", %{"status" => "searched"})
+      |> patch(~p"/volunteer/segments/3", %{"status" => "searched"})
 
     assert %{"data" => data} = json_response(conn, 200)
     assert data["status"] == "searched"
     assert data["searched_by_volunteer_id"] == volunteer.id
   end
 
-  test "PATCH /volunteer/zones/:h3_index rejects a malformed h3_index instead of persisting it",
+  test "PATCH /volunteer/segments/:segment_id for a segment_id that was never generated returns 404",
        %{conn: conn, search: search} do
     {_volunteer, token} = approved_volunteer(search)
 
     conn =
       conn
       |> auth(token)
-      |> patch(~p"/volunteer/zones/ffffffffffffffff", %{"status" => "in_progress"})
+      |> patch(~p"/volunteer/segments/3", %{"status" => "searched"})
+
+    assert json_response(conn, 404)
+  end
+
+  test "PATCH /volunteer/segments/:segment_id rejects a non-integer segment_id instead of persisting it",
+       %{conn: conn, search: search} do
+    {_volunteer, token} = approved_volunteer(search)
+
+    conn =
+      conn
+      |> auth(token)
+      |> patch(~p"/volunteer/segments/not-a-number", %{"status" => "in_progress"})
 
     assert json_response(conn, 422)
-    assert Zones.list_by_search(search.id) == []
+    assert Segments.list_by_search(search.id) == []
   end
 
   test "POST /volunteer/remarks round-trips client id/reported_at and forces volunteer_id to self",
@@ -172,7 +213,7 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert %{"status" => "removed"} = json_response(conn, 200)
   end
 
-  test "a second search's volunteer cannot affect the first search's zones", %{
+  test "a second search's volunteer cannot affect the first search's segments", %{
     conn: conn,
     search: search
   } do
@@ -185,13 +226,14 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
         contact_phone: "+390612345"
       })
 
+    {:ok, _} = Segments.seed_segments(other_search.id, [%{segment_id: 3}])
     {_other_volunteer, other_token} = approved_volunteer(other_search)
 
     conn
     |> auth(other_token)
-    |> patch(~p"/volunteer/zones/891f1d48177ffff", %{"status" => "searched"})
+    |> patch(~p"/volunteer/segments/3", %{"status" => "searched"})
 
-    assert Zones.list_by_search(search.id) == []
-    assert length(Zones.list_by_search(other_search.id)) == 1
+    assert Segments.list_by_search(search.id) == []
+    assert length(Segments.list_by_search(other_search.id)) == 1
   end
 end

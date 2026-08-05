@@ -34,8 +34,8 @@ defmodule FindThemApiWeb.SearchJSON do
       volunteer_count: aggregates.volunteer_count,
       pending_count: aggregates.pending_count,
       approved_counts: aggregates.approved_counts,
-      zones_searched: aggregates.zones_searched,
-      total_zones: aggregates.total_zones,
+      segments_searched: aggregates.segments_searched,
+      total_segments: aggregates.total_segments,
       rebalance_suggested: aggregates.rebalance_suggested
     }
   end

@@ -143,7 +143,7 @@ defmodule FindThemApi.VolunteersTest do
     assert {:error, :invalid_status} = Volunteers.set_status(volunteer, "anything-else")
   end
 
-  test "list_by_search_with_stats/1 includes pending volunteers and their zones-searched count",
+  test "list_by_search_with_stats/1 includes pending volunteers and their segments-searched count",
        %{
          search: search
        } do
@@ -155,12 +155,14 @@ defmodule FindThemApi.VolunteersTest do
 
     Volunteers.set_status(active, "approved")
 
-    FindThemApi.Zones.upsert_zone(search.id, "891f1d48177ffff", %{
+    {:ok, _} = FindThemApi.Segments.seed_segments(search.id, [%{segment_id: 0}, %{segment_id: 1}])
+
+    FindThemApi.Segments.update_segment_status(search.id, 0, %{
       status: "searched",
       searched_by_volunteer_id: active.id
     })
 
-    FindThemApi.Zones.upsert_zone(search.id, "891f1d48178ffff", %{
+    FindThemApi.Segments.update_segment_status(search.id, 1, %{
       status: "searched",
       searched_by_volunteer_id: active.id
     })

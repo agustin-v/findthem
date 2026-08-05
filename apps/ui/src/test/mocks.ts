@@ -1,5 +1,4 @@
 import type { FeatureCollection } from 'geojson'
-import type { Zone } from '@/lib/zones'
 
 export const mockSegmentsResponse = {
   segments: {
@@ -103,16 +102,6 @@ export const mockSegmentsResponse = {
   },
 }
 
-export const mockZones: Zone[] = [
-  { h3Index: '891f1d48177ffff', status: 'not_assigned' },
-  { h3Index: '891f1d48173ffff', status: 'assigned' },
-  { h3Index: '891f1d4816bffff', status: 'in_progress' },
-  { h3Index: '891f1d48163ffff', status: 'searched', searchedAt: Date.now() - 0.5 * 3_600_000 },
-  { h3Index: '891f1d4815bffff', status: 'searched', searchedAt: Date.now() - 1.5 * 3_600_000 },
-  { h3Index: '891f1d48153ffff', status: 'searched', searchedAt: Date.now() - 3 * 3_600_000 },
-  { h3Index: '891f1d4814bffff', status: 'searched', searchedAt: Date.now() - 5 * 3_600_000 },
-]
-
 export const mockSearchDetail = {
   id: '1',
   subjectType: 'person' as const,
@@ -120,8 +109,8 @@ export const mockSearchDetail = {
   status: 'active' as const,
   createdAt: new Date(Date.now() - 3600000 * 2),
   volunteerCount: 4,
-  zonesSearched: 3,
-  totalZones: 19,
+  segmentsSearched: 3,
+  totalSegments: 19,
   lastSeenLocation: 'Via del Corso 12, Roma',
   lastSeenAt: '2026-05-07T14:30:00Z',
   lastSeenCoords: { lat: 41.9028, lng: 12.4964 },

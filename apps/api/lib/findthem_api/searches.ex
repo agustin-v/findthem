@@ -2,9 +2,9 @@ defmodule FindThemApi.Searches do
   import Ecto.Query
 
   alias FindThemApi.Repo
-  alias FindThemApi.Searches.{Generation, Search, Zone}
+  alias FindThemApi.Searches.{Generation, Search, Segment}
   alias FindThemApi.Volunteers.Volunteer
-  alias FindThemApi.Zones
+  alias FindThemApi.{Segments, SegmentAssignments}
 
   def list_searches_by_owner(owner_id) do
     Search
@@ -62,7 +62,7 @@ defmodule FindThemApi.Searches do
   end
 
   # Retried once on a join_token collision (astronomically unlikely — 40 bits
-  # of CSPRNG entropy — but cheap to guard, matching Zones.upsert_zone's
+  # of CSPRNG entropy — but cheap to guard, matching Segments.update_segment_status's
   # retry-once pattern for its own unique-constraint race).
   #
   # Known, accepted tradeoff: two concurrent rotate calls (e.g. a
@@ -140,8 +140,7 @@ defmodule FindThemApi.Searches do
     %{
       "center" => %{"lat" => search.lkp_lat, "lng" => search.lkp_lng},
       "radius_km" => radius_km,
-      "h3_resolution" => h3_resolution,
-      "include_cells" => true
+      "h3_resolution" => h3_resolution
     }
     |> maybe_put_resources(resources)
   end
@@ -150,7 +149,7 @@ defmodule FindThemApi.Searches do
   defp maybe_put_resources(params, resources), do: Map.put(params, "resources", resources)
 
   defp persist_generation(search, geo_params, geo_response, radius_km, h3_resolution) do
-    cells = extract_zone_cells(geo_response)
+    segment_entries = extract_segment_entries(geo_response)
 
     Repo.transaction(fn ->
       with {:ok, _search} <-
@@ -163,10 +162,11 @@ defmodule FindThemApi.Searches do
                "search_id" => search.id,
                "request_params" => geo_params,
                "meta" => Map.get(geo_response, "meta", %{}),
-               "response" => strip_cells(geo_response)
+               "response" => geo_response
              })
              |> Repo.insert(),
-           {:ok, _count} <- Zones.seed_zones(search.id, cells) do
+           {:ok, _count} <- Segments.seed_segments(search.id, segment_entries),
+           :ok <- SegmentAssignments.clear_for_search(search.id) do
         generation
       else
         {:error, error} -> Repo.rollback(error)
@@ -175,30 +175,16 @@ defmodule FindThemApi.Searches do
     |> broadcast_generation(search.id)
   end
 
-  defp extract_zone_cells(%{"segments" => %{"features" => features}}) do
+  defp extract_segment_entries(%{"segments" => %{"features" => features}}) do
     Enum.flat_map(features, fn %{"properties" => props} ->
       case props do
-        %{"cells" => cells, "segment_id" => segment_id} when is_list(cells) ->
-          Enum.map(cells, fn h3_index -> %{h3_index: h3_index, segment_id: segment_id} end)
-
-        _ ->
-          []
+        %{"segment_id" => segment_id} -> [%{segment_id: segment_id}]
+        _ -> []
       end
     end)
   end
 
-  defp extract_zone_cells(_response), do: []
-
-  defp strip_cells(%{"segments" => %{"features" => features}} = response) do
-    stripped =
-      Enum.map(features, fn feature ->
-        update_in(feature, ["properties"], &Map.delete(&1, "cells"))
-      end)
-
-    put_in(response, ["segments", "features"], stripped)
-  end
-
-  defp strip_cells(response), do: response
+  defp extract_segment_entries(_response), do: []
 
   defp broadcast_generation({:ok, %Generation{} = generation} = result, search_id) do
     Phoenix.PubSub.broadcast(
@@ -232,12 +218,13 @@ defmodule FindThemApi.Searches do
         )
       )
 
-    total_zones = Repo.one(from(z in Zone, where: z.search_id == ^search_id, select: count()))
+    total_segments =
+      Repo.one(from(s in Segment, where: s.search_id == ^search_id, select: count()))
 
-    zones_searched =
+    segments_searched =
       Repo.one(
-        from(z in Zone,
-          where: z.search_id == ^search_id and z.status == "searched",
+        from(s in Segment,
+          where: s.search_id == ^search_id and s.status == "searched",
           select: count()
         )
       )
@@ -248,8 +235,8 @@ defmodule FindThemApi.Searches do
       volunteer_count: volunteer_count,
       pending_count: pending_count,
       approved_counts: approved_counts,
-      zones_searched: zones_searched,
-      total_zones: total_zones,
+      segments_searched: segments_searched,
+      total_segments: total_segments,
       rebalance_suggested: rebalance_suggested?(volunteer_count, approved_counts, last_generation)
     }
   end

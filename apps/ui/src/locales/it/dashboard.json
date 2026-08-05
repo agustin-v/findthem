@@ -59,6 +59,15 @@
     },
     "generatingArea": "Generazione dell'area di ricerca...",
     "generateFailed": "Impossibile generare l'area di ricerca.",
-    "retryGenerate": "Riprova"
+    "retryGenerate": "Riprova",
+    "assignment": {
+      "title": "Segmento {{id}}",
+      "close": "Chiudi",
+      "noneAssigned": "Nessuno ancora assegnato",
+      "assignPlaceholder": "Assegna un volontario...",
+      "assign": "Assegna",
+      "unassign": "Rimuovi",
+      "actionFailed": "Qualcosa è andato storto. Riprova."
+    }
   }
 }

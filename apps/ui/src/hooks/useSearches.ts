@@ -25,6 +25,46 @@ export function useVolunteers(searchId: string) {
   })
 }
 
+export function useSegments(searchId: string) {
+  return useQuery({
+    queryKey: ['segments', searchId],
+    queryFn: () => api.segments.getBySearch(searchId),
+    // Mirrors apps/mobile's map.tsx poll interval, so a coordinator watching
+    // the same search sees volunteer progress on roughly the same cadence.
+    refetchInterval: 15_000,
+  })
+}
+
+export function useSegmentAssignments(searchId: string) {
+  return useQuery({
+    queryKey: ['segment-assignments', searchId],
+    queryFn: () => api.segmentAssignments.getBySearch(searchId),
+    refetchInterval: 15_000,
+  })
+}
+
+export function useAssignVolunteer(searchId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ segmentId, volunteerId }: { segmentId: number; volunteerId: string }) =>
+      api.segmentAssignments.assign(searchId, segmentId, volunteerId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['segment-assignments', searchId] })
+    },
+  })
+}
+
+export function useUnassignVolunteer(searchId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ segmentId, volunteerId }: { segmentId: number; volunteerId: string }) =>
+      api.segmentAssignments.unassign(searchId, segmentId, volunteerId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['segment-assignments', searchId] })
+    },
+  })
+}
+
 export function useJoinPreview(code: string) {
   return useQuery({
     queryKey: ['join-preview', code],

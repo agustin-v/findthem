@@ -41,10 +41,10 @@ export function SearchInfoCard({ search }: SearchInfoCardProps) {
         />
         <DetailRow
           label={t('detail.zones', {
-            searched: search.zonesSearched,
-            total: search.totalZones,
+            searched: search.segmentsSearched,
+            total: search.totalSegments,
           })}
-          value={`${search.zonesSearched} / ${search.totalZones}`}
+          value={`${search.segmentsSearched} / ${search.totalSegments}`}
         />
         {Object.entries(search.details).map(([key, value]) => (
           <DetailRow

@@ -2,7 +2,7 @@ defmodule FindThemApi.Volunteers do
   import Ecto.Query
 
   alias FindThemApi.Repo
-  alias FindThemApi.Searches.Zone
+  alias FindThemApi.Searches.Segment
   alias FindThemApi.Volunteers.Volunteer
 
   @token_salt "volunteer"
@@ -33,20 +33,20 @@ defmodule FindThemApi.Volunteers do
   end
 
   def list_by_search_with_stats(search_id) do
-    zone_counts =
-      from(z in Zone,
+    segment_counts =
+      from(s in Segment,
         where:
-          z.search_id == ^search_id and z.status == "searched" and
-            not is_nil(z.searched_by_volunteer_id),
-        group_by: z.searched_by_volunteer_id,
-        select: {z.searched_by_volunteer_id, count()}
+          s.search_id == ^search_id and s.status == "searched" and
+            not is_nil(s.searched_by_volunteer_id),
+        group_by: s.searched_by_volunteer_id,
+        select: {s.searched_by_volunteer_id, count()}
       )
       |> Repo.all()
       |> Map.new()
 
     search_id
     |> list_by_search()
-    |> Enum.map(fn volunteer -> {volunteer, Map.get(zone_counts, volunteer.id, 0)} end)
+    |> Enum.map(fn volunteer -> {volunteer, Map.get(segment_counts, volunteer.id, 0)} end)
   end
 
   # Deliberately no state-machine guard: any transition between "approved"

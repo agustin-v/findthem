@@ -1,7 +1,39 @@
-import { latLngToCell, gridDisk } from 'h3-js'
 import { apiClient } from './api-client'
-import type { Zone, ZoneStatus, ZonesResponse } from './zones'
 import type { SegmentsMeta, SegmentsResponse } from './geo-api'
+
+export type SegmentStatus = 'not_assigned' | 'assigned' | 'in_progress' | 'searched'
+
+export interface SegmentStatusEntry {
+  segmentId: number
+  status: SegmentStatus
+  searchedAt: string | null
+}
+
+interface RemoteSegmentStatus {
+  segment_id: number
+  status: SegmentStatus
+  searched_at: string | null
+}
+
+function mapSegmentStatus(remote: RemoteSegmentStatus): SegmentStatusEntry {
+  return { segmentId: remote.segment_id, status: remote.status, searchedAt: remote.searched_at }
+}
+
+export interface SegmentAssignment {
+  segmentId: number
+  volunteerId: string
+  assignedAt: string
+}
+
+interface RemoteSegmentAssignment {
+  segment_id: number
+  volunteer_id: string
+  assigned_at: string
+}
+
+function mapSegmentAssignment(remote: RemoteSegmentAssignment): SegmentAssignment {
+  return { segmentId: remote.segment_id, volunteerId: remote.volunteer_id, assignedAt: remote.assigned_at }
+}
 
 export interface Search {
   id: string
@@ -10,8 +42,8 @@ export interface Search {
   status: 'active' | 'suspended' | 'resolved'
   createdAt: Date
   volunteerCount: number
-  zonesSearched: number
-  totalZones: number
+  segmentsSearched: number
+  totalSegments: number
 }
 
 export interface SearchDetail extends Search {
@@ -34,7 +66,7 @@ export interface Volunteer {
   joinedAt: string
   approvedAt: string | null
   removedAt: string | null
-  zonesSearched: number
+  segmentsSearched: number
 }
 
 export interface CreateSearchInput {
@@ -55,8 +87,6 @@ interface RemoteGeneration {
   inserted_at: string
 }
 
-const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
-
 // --- Real backend mapping (apps/api) ---
 // The API returns snake_case; these types/mapper translate it to the
 // camelCase shape the rest of the UI already expects.
@@ -73,8 +103,8 @@ interface RemoteSearch {
   lkp_at: string | null
   inserted_at: string
   volunteer_count: number
-  zones_searched: number
-  total_zones: number
+  segments_searched: number
+  total_segments: number
   join_token: string
 }
 
@@ -88,7 +118,7 @@ interface RemoteVolunteer {
   joined_at: string
   approved_at: string | null
   removed_at: string | null
-  zones_searched: number | null
+  segments_searched: number | null
 }
 
 export interface JoinPreview {
@@ -114,7 +144,7 @@ function mapVolunteer(remote: RemoteVolunteer): Volunteer {
     joinedAt: remote.joined_at,
     approvedAt: remote.approved_at,
     removedAt: remote.removed_at,
-    zonesSearched: remote.zones_searched ?? 0,
+    segmentsSearched: remote.segments_searched ?? 0,
   }
 }
 
@@ -131,8 +161,8 @@ function mapSearch(remote: RemoteSearch): SearchDetail {
     status: remote.status,
     createdAt: new Date(remote.inserted_at),
     volunteerCount: remote.volunteer_count,
-    zonesSearched: remote.zones_searched,
-    totalZones: remote.total_zones,
+    segmentsSearched: remote.segments_searched,
+    totalSegments: remote.total_segments,
     lastSeenLocation: remote.lkp_address ?? '',
     lastSeenAt: remote.lkp_at ?? '',
     lastSeenCoords:
@@ -246,58 +276,45 @@ export const api = {
       return { subjectType: data.subject_type, subjectName: data.subject_name, area: data.area }
     },
   },
-  zones: {
-    getBySearch: async (searchId: string): Promise<ZonesResponse> => {
-      await delay(700)
-      return { searchId, zones: getOrCreateZones(searchId) }
+  segments: {
+    getBySearch: async (searchId: string): Promise<SegmentStatusEntry[]> => {
+      const { data } = await apiClient.get<{ data: RemoteSegmentStatus[] }>(
+        `/api/searches/${searchId}/segments`,
+      )
+      return data.map(mapSegmentStatus)
     },
-    updateStatus: async (searchId: string, h3Index: string, newStatus: ZoneStatus): Promise<Zone> => {
-      await delay(300)
-      const zones = getOrCreateZones(searchId)
-      const zone = zones.find((z) => z.h3Index === h3Index)
-      if (!zone) throw new Error('Zone not found')
-      zone.status = newStatus
-      if (newStatus === 'searched') zone.searchedAt = Date.now()
-      return { ...zone }
+    updateStatus: async (
+      searchId: string,
+      segmentId: number,
+      newStatus: SegmentStatus,
+    ): Promise<SegmentStatusEntry> => {
+      const { data } = await apiClient.patch<{ data: RemoteSegmentStatus }>(
+        `/api/searches/${searchId}/segments/${segmentId}`,
+        { status: newStatus },
+      )
+      return mapSegmentStatus(data)
     },
   },
-}
-
-// --- Zone store (session-scoped mock persistence) ---
-
-const zoneStore = new Map<string, Zone[]>()
-
-const SEARCH_CENTERS: Record<string, { lat: number; lng: number }> = {
-  '1': { lat: 41.9028, lng: 12.4964 },
-  '2': { lat: 41.8614, lng: 12.5244 },
-}
-
-function getOrCreateZones(searchId: string): Zone[] {
-  if (zoneStore.has(searchId)) return zoneStore.get(searchId)!
-
-  const center = SEARCH_CENTERS[searchId]
-  if (!center) return []
-
-  const centerCell = latLngToCell(center.lat, center.lng, 9)
-  const hexes = gridDisk(centerCell, 2)
-
-  let zones: Zone[]
-
-  if (searchId === '1') {
-    zones = hexes.map((h3Index, i): Zone => {
-      if (i === 0) return { h3Index, status: 'searched', searchedAt: Date.now() - 0.5 * 3_600_000 }
-      if (i === 1) return { h3Index, status: 'searched', searchedAt: Date.now() - 1.5 * 3_600_000 }
-      if (i === 2) return { h3Index, status: 'searched', searchedAt: Date.now() - 3 * 3_600_000 }
-      return { h3Index, status: 'not_assigned' }
-    })
-  } else {
-    zones = hexes.map((h3Index): Zone => ({
-      h3Index,
-      status: 'searched',
-      searchedAt: Date.now() - 5 * 3_600_000,
-    }))
-  }
-
-  zoneStore.set(searchId, zones)
-  return zones
+  segmentAssignments: {
+    getBySearch: async (searchId: string): Promise<SegmentAssignment[]> => {
+      const { data } = await apiClient.get<{ data: RemoteSegmentAssignment[] }>(
+        `/api/searches/${searchId}/segment_assignments`,
+      )
+      return data.map(mapSegmentAssignment)
+    },
+    assign: async (
+      searchId: string,
+      segmentId: number,
+      volunteerId: string,
+    ): Promise<SegmentAssignment> => {
+      const { data } = await apiClient.post<{ data: RemoteSegmentAssignment }>(
+        `/api/searches/${searchId}/segment_assignments`,
+        { segment_id: segmentId, volunteer_id: volunteerId },
+      )
+      return mapSegmentAssignment(data)
+    },
+    unassign: async (searchId: string, segmentId: number, volunteerId: string): Promise<void> => {
+      await apiClient.delete(`/api/searches/${searchId}/segment_assignments/${segmentId}/${volunteerId}`)
+    },
+  },
 }

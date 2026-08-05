@@ -44,7 +44,7 @@ defmodule FindThemApiWeb.Router do
     pipe_through [:api, :volunteer_authenticated]
 
     get "/search", VolunteerSearchController, :show
-    patch "/zones/:h3_index", VolunteerZoneController, :update
+    patch "/segments/:segment_id", VolunteerSegmentController, :update
     post "/remarks", VolunteerRemarkController, :create
   end
 
@@ -54,7 +54,10 @@ defmodule FindThemApiWeb.Router do
     get "/me", MeController, :show
 
     resources "/searches", SearchController, only: [:index, :show, :create] do
-      resources "/zones", ZoneController, only: [:index, :update], param: "h3_index"
+      resources "/segments", SegmentController, only: [:index, :update], param: "segment_id"
+      get "/segment_assignments", SegmentAssignmentController, :index
+      post "/segment_assignments", SegmentAssignmentController, :create
+      delete "/segment_assignments/:segment_id/:volunteer_id", SegmentAssignmentController, :delete
       resources "/remarks", RemarkController, only: [:index, :create]
       resources "/volunteers", SearchVolunteerController, only: [:index, :update]
       post "/join_token/rotate", JoinTokenController, :rotate

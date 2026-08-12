@@ -16,6 +16,7 @@ import { useSegmentLayer } from '@/hooks/useSegmentLayer'
 import { useRestrictedAreaLayer } from '@/hooks/useRestrictedAreaLayer'
 import { useGenerateSegments } from '@/hooks/useGenerateSegments'
 import { useGeoSegmentsStore } from '@/stores/useGeoSegmentsStore'
+import { usePhotoUploadStore } from '@/stores/usePhotoUploadStore'
 import { hasApiKey, getMapStyleUrl } from '@/lib/tomtom'
 import { api } from '@/lib/api'
 
@@ -44,6 +45,8 @@ export function SearchDetailPage() {
   const setError = useGeoSegmentsStore((s) => s.setError)
   const generateSegments = useGenerateSegments(searchId)
   const { data: assignments = [] } = useSegmentAssignments(searchId)
+  const photoUploadFailure = usePhotoUploadStore((s) => s.failuresBySearch[searchId])
+  const clearPhotoUploadFailure = usePhotoUploadStore((s) => s.clear)
 
   const [map, setMap] = useState<maplibregl.Map | null>(null)
   const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null)
@@ -143,26 +146,48 @@ export function SearchDetailPage() {
         <div className="pointer-events-auto absolute bottom-4 left-4 w-48">
           <ZoneLegend />
         </div>
-        {geoLoading && (
-          <Card className="pointer-events-auto absolute bottom-4 right-4 bg-card/95 backdrop-blur-sm shadow-lg">
-            <CardContent className="flex items-center gap-2 py-2 px-3">
-              <div className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              <span className="text-sm text-muted-foreground">
-                {t('detail.generatingArea')}
-              </span>
-            </CardContent>
-          </Card>
-        )}
-        {!geoLoading && geoError && !segments && (
-          <Card className="pointer-events-auto absolute bottom-4 right-4 bg-card/95 backdrop-blur-sm shadow-lg">
-            <CardContent className="flex items-center gap-3 py-2 px-3">
-              <span className="text-sm text-destructive">{t('detail.generateFailed')}</span>
-              <Button size="sm" variant="outline" onClick={handleRetryGenerate}>
-                {t('detail.retryGenerate')}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        <div className="pointer-events-none absolute bottom-4 right-4 flex w-72 flex-col gap-2">
+          {geoLoading && (
+            <Card className="pointer-events-auto bg-card/95 backdrop-blur-sm shadow-lg">
+              <CardContent className="flex items-center gap-2 py-2 px-3">
+                <div className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                <span className="text-sm text-muted-foreground">
+                  {t('detail.generatingArea')}
+                </span>
+              </CardContent>
+            </Card>
+          )}
+          {!geoLoading && geoError && !segments && (
+            <Card className="pointer-events-auto bg-card/95 backdrop-blur-sm shadow-lg">
+              <CardContent className="flex items-center gap-3 py-2 px-3">
+                <span className="text-sm text-destructive">{t('detail.generateFailed')}</span>
+                <Button size="sm" variant="outline" onClick={handleRetryGenerate}>
+                  {t('detail.retryGenerate')}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {photoUploadFailure && (
+            <Card className="pointer-events-auto bg-card/95 backdrop-blur-sm shadow-lg">
+              <CardContent className="flex items-center gap-3 py-2 px-3">
+                <span className="text-sm text-destructive">
+                  {t('detail.photoUploadFailed', {
+                    count: photoUploadFailure.failed,
+                    failed: photoUploadFailure.failed,
+                    total: photoUploadFailure.total,
+                  })}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => clearPhotoUploadFailure(searchId)}
+                >
+                  {t('detail.dismiss')}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
         {selectedSegmentId != null && (
           <div className="pointer-events-auto absolute bottom-4 right-4 w-72">
             <SegmentAssignmentPanel

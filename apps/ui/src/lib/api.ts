@@ -44,6 +44,7 @@ export interface Search {
   volunteerCount: number
   segmentsSearched: number
   totalSegments: number
+  photoUrls: string[]
 }
 
 export interface SearchDetail extends Search {
@@ -105,6 +106,7 @@ interface RemoteSearch {
   volunteer_count: number
   segments_searched: number
   total_segments: number
+  photo_urls: string[]
   join_token: string
 }
 
@@ -163,6 +165,7 @@ function mapSearch(remote: RemoteSearch): SearchDetail {
     volunteerCount: remote.volunteer_count,
     segmentsSearched: remote.segments_searched,
     totalSegments: remote.total_segments,
+    photoUrls: remote.photo_urls,
     lastSeenLocation: remote.lkp_address ?? '',
     lastSeenAt: remote.lkp_at ?? '',
     lastSeenCoords:
@@ -315,6 +318,21 @@ export const api = {
     },
     unassign: async (searchId: string, segmentId: number, volunteerId: string): Promise<void> => {
       await apiClient.delete(`/api/searches/${searchId}/segment_assignments/${segmentId}/${volunteerId}`)
+    },
+  },
+  photos: {
+    // One request per file, not a batch endpoint — apps/api validates each
+    // upload independently (content type, size, 5-photo cap checked against
+    // the search's current count), so a partial failure only loses the one
+    // file that failed rather than the whole batch.
+    upload: async (searchId: string, file: File): Promise<SearchDetail> => {
+      const formData = new FormData()
+      formData.append('photo', file)
+      const { data } = await apiClient.postForm<{ data: RemoteSearch }>(
+        `/api/searches/${searchId}/photos`,
+        formData,
+      )
+      return mapSearch(data)
     },
   },
 }

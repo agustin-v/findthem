@@ -61,6 +61,30 @@ config :findthem_api, :geo,
   url: System.get_env("GEO_URL", "http://localhost:8000"),
   internal_token: System.get_env("GEO_INTERNAL_TOKEN")
 
+# Subject-photo storage (Story 27) — R2 is S3-compatible, so ex_aws_s3 talks
+# to it unmodified via a custom :s3 host/scheme. Uploads are proxied through
+# this app (browser never talks to R2 directly, same "never call the
+# external service directly" shape as the geo proxy above) — the browser
+# posts multipart form data to us, we PUT it to R2 with our own credentials,
+# and we hand back short-lived presigned GET URLs when serving photos back
+# to a coordinator, so the bucket itself stays fully private.
+config :findthem_api, :r2, bucket: System.get_env("R2_BUCKET")
+
+r2_account_id = System.get_env("R2_ACCOUNT_ID")
+
+config :ex_aws,
+  access_key_id: System.get_env("R2_ACCESS_KEY_ID"),
+  secret_access_key: System.get_env("R2_SECRET_ACCESS_KEY"),
+  region: "auto",
+  json_codec: Jason
+
+if r2_account_id do
+  config :ex_aws, :s3,
+    scheme: "https://",
+    host: "#{r2_account_id}.r2.cloudflarestorage.com",
+    region: "auto"
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

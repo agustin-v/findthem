@@ -1,5 +1,5 @@
 defmodule FindThemApiWeb.SearchJSON do
-  alias FindThemApi.Searches
+  alias FindThemApi.{Photos, Searches}
 
   def index(%{searches: searches}) do
     %{data: Enum.map(searches, &data/1)}
@@ -18,7 +18,7 @@ defmodule FindThemApiWeb.SearchJSON do
       subject_name: search.subject_name,
       subject_details: search.subject_details,
       contact_phone: search.contact_phone,
-      photo_urls: search.photo_urls,
+      photo_urls: Photos.presigned_urls(search),
       status: search.status,
       lkp_lat: search.lkp_lat,
       lkp_lng: search.lkp_lng,

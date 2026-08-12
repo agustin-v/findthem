@@ -60,6 +60,9 @@
     "generatingArea": "Generazione dell'area di ricerca...",
     "generateFailed": "Impossibile generare l'area di ricerca.",
     "retryGenerate": "Riprova",
+    "dismiss": "Ignora",
+    "photoUploadFailed_one": "{{failed}} foto su {{total}} non è stata caricata.",
+    "photoUploadFailed_other": "{{failed}} foto su {{total}} non sono state caricate.",
     "assignment": {
       "title": "Segmento {{id}}",
       "close": "Chiudi",

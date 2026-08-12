@@ -58,6 +58,42 @@ defmodule FindThemApiWeb.FallbackController do
     |> json(%{errors: %{geo: ["Segmentation service is temporarily unavailable. Try again."]}})
   end
 
+  def call(conn, {:error, :missing_photo}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{photo: ["is required"]}})
+  end
+
+  def call(conn, {:error, :too_many_photos}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{photo: ["a search can have at most 5 photos"]}})
+  end
+
+  def call(conn, {:error, :invalid_content_type}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{photo: ["must be an image (jpeg, png, webp, or gif)"]}})
+  end
+
+  def call(conn, {:error, :file_too_large}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{photo: ["must be 10MB or smaller"]}})
+  end
+
+  def call(conn, {:error, :invalid_photo}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{photo: ["could not be read"]}})
+  end
+
+  def call(conn, {:error, :photo_storage_unavailable}) do
+    conn
+    |> put_status(:service_unavailable)
+    |> json(%{errors: %{photo: ["Photo storage is temporarily unavailable. Try again."]}})
+  end
+
   # geo rejected the request itself (e.g. Pydantic validation) — surface its
   # status rather than masking it as a generic 500, but not its raw body
   # (internal implementation details, e.g. Pydantic error internals). Not

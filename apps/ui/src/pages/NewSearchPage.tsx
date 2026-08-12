@@ -13,6 +13,7 @@ import { useCreateSearch } from '@/hooks/useSearches'
 import { useSearchCreationStore } from '@/stores/useSearchCreationStore'
 import { api } from '@/lib/api'
 import { useGeoSegmentsStore } from '@/stores/useGeoSegmentsStore'
+import { usePhotoUploadStore } from '@/stores/usePhotoUploadStore'
 import { ApiError } from '@/lib/api-client'
 import type {
   SubjectData,
@@ -79,6 +80,25 @@ export function NewSearchPage() {
               setError(err instanceof Error ? err.message : 'Failed to generate search segments')
             } finally {
               setIsGenerating(false)
+            }
+          }
+
+          // Uploaded after the search exists (needs a real searchId) and
+          // awaited before navigating, same reasoning as generate above —
+          // SearchDetailPage should see the final photo_urls on first
+          // render, not an empty list that then pops in later. One request
+          // per file via allSettled: a failed photo shouldn't block
+          // navigation or take the others down with it — the search itself
+          // was already created either way.
+          const photos = 'photos' in formData ? formData.photos : undefined
+          if (photos?.length) {
+            const results = await Promise.allSettled(
+              photos.map((file) => api.photos.upload(searchId, file)),
+            )
+            const failures = results.filter((r) => r.status === 'rejected')
+            if (failures.length > 0) {
+              console.warn(`${failures.length}/${photos.length} photo upload(s) failed`, failures)
+              usePhotoUploadStore.getState().setFailures(searchId, failures.length, photos.length)
             }
           }
 

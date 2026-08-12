@@ -60,6 +60,7 @@ defmodule FindThemApiWeb.Router do
       delete "/segment_assignments/:segment_id/:volunteer_id", SegmentAssignmentController, :delete
       resources "/remarks", RemarkController, only: [:index, :create]
       resources "/volunteers", SearchVolunteerController, only: [:index, :update]
+      post "/photos", PhotoController, :create
       post "/join_token/rotate", JoinTokenController, :rotate
       post "/generate", GenerationController, :create
       get "/generations/latest", GenerationController, :latest

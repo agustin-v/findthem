@@ -111,6 +111,7 @@ export const mockSearchDetail = {
   volunteerCount: 4,
   segmentsSearched: 3,
   totalSegments: 19,
+  photoUrls: [],
   lastSeenLocation: 'Via del Corso 12, Roma',
   lastSeenAt: '2026-05-07T14:30:00Z',
   lastSeenCoords: { lat: 41.9028, lng: 12.4964 },

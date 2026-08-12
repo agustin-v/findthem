@@ -33,6 +33,18 @@ export function SearchInfoCard({ search }: SearchInfoCardProps) {
         </div>
       </CardHeader>
       <CardContent className="flex flex-col">
+        {search.photoUrls.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {search.photoUrls.map((url) => (
+              <img
+                key={url}
+                src={url}
+                alt={search.subjectName}
+                className="h-16 w-16 shrink-0 rounded-md object-cover"
+              />
+            ))}
+          </div>
+        )}
         <DetailRow label={t('detail.lastSeen')} value={search.lastSeenAt} />
         <DetailRow label={t('detail.location')} value={search.lastSeenLocation} />
         <DetailRow

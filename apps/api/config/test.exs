@@ -26,6 +26,9 @@ config :logger, level: :warning
 # Mox — tests must never hit the real geo service.
 config :findthem_api, :geo_client, FindThemApi.Geo.ClientMock
 
+# Mox — tests must never hit real R2.
+config :findthem_api, :photo_storage, FindThemApi.Photos.StorageMock
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

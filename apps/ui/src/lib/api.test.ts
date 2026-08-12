@@ -22,6 +22,7 @@ const remoteSearch = {
   volunteer_count: 2,
   segments_searched: 3,
   total_segments: 10,
+  photo_urls: ['https://signed.example.com/searches/search-1/a.jpg'],
   join_token: 'ABCDE12345',
 }
 
@@ -66,6 +67,7 @@ describe('api.searches.getById', () => {
     const result = await api.searches.getById('search-1')
 
     expect(result.joinToken).toBe('ABCDE12345')
+    expect(result.photoUrls).toEqual(['https://signed.example.com/searches/search-1/a.jpg'])
   })
 })
 
@@ -328,5 +330,28 @@ describe('api.segmentAssignments.unassign', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toContain('/api/searches/search-1/segment_assignments/0/vol-1')
     expect(init.method).toBe('DELETE')
+  })
+})
+
+describe('api.photos.upload', () => {
+  it('POSTs the file as multipart form data under the "photo" field', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({ data: remoteSearch }),
+    })
+
+    const file = new File(['fake-image-bytes'], 'fixture.jpg', { type: 'image/jpeg' })
+    const result = await api.photos.upload('search-1', file)
+
+    expect(result.photoUrls).toEqual(remoteSearch.photo_urls)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/photos')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBeInstanceOf(FormData)
+    expect(init.body.get('photo')).toBe(file)
+    // Must NOT set a JSON content-type — that would break the browser's
+    // own multipart boundary header.
+    expect(init.headers['Content-Type']).toBeUndefined()
   })
 })

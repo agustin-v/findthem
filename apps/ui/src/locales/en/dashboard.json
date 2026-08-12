@@ -60,6 +60,9 @@
     "generatingArea": "Generating search area...",
     "generateFailed": "Couldn't generate the search area.",
     "retryGenerate": "Retry",
+    "dismiss": "Dismiss",
+    "photoUploadFailed_one": "{{failed}} of {{total}} photo failed to upload.",
+    "photoUploadFailed_other": "{{failed}} of {{total}} photos failed to upload.",
     "assignment": {
       "title": "Segment {{id}}",
       "close": "Close",

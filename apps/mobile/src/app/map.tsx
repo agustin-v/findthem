@@ -6,6 +6,7 @@ import {
   type PressEventWithFeatures,
 } from '@maplibre/maplibre-react-native';
 import { useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
@@ -14,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '@/components/primary-button';
 import { RemarkForm } from '@/components/remark-form';
+import { SubjectPhotoModal } from '@/components/subject-photo-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -84,6 +86,8 @@ export default function MapScreen() {
   const [segmentActionError, setSegmentActionError] = useState<string | null>(null);
   const [updatingSegment, setUpdatingSegment] = useState(false);
   const [remarkFormOpen, setRemarkFormOpen] = useState(false);
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [failedHeaderThumbnailUrl, setFailedHeaderThumbnailUrl] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
@@ -140,6 +144,7 @@ export default function MapScreen() {
       inFlight = true;
       try {
         const data = await getVolunteerSearch(token);
+        setSearch(data.search);
         setSegments(data.segments);
         setGeneration(data.generation);
         setMySegmentIds(data.mySegmentIds);
@@ -157,13 +162,18 @@ export default function MapScreen() {
   }, [screenState, token]);
 
   // A lighter-weight alternative to `reload` for callers that only need
-  // fresh segment data (e.g. after posting a remark) — unlike `reload`,
-  // this doesn't reset screenState to 'loading' and blank the map with a
+  // fresh data (e.g. after posting a remark) — unlike `reload`, this
+  // doesn't reset screenState to 'loading' and blank the map with a
   // full-screen spinner over what the volunteer was just looking at.
+  // Also refreshes `search` (photoUrls are presigned, 1hr-expiring URLs —
+  // the periodic poll below re-fetches them well within that window, but
+  // this manual trigger needs to as well or it'd be the one path that
+  // still goes stale over a long session).
   const refreshSegments = useCallback(async () => {
     if (!token) return;
     try {
       const data = await getVolunteerSearch(token);
+      setSearch(data.search);
       setSegments(data.segments);
       setGeneration(data.generation);
       setMySegmentIds(data.mySegmentIds);
@@ -328,6 +338,19 @@ export default function MapScreen() {
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <ThemedView style={styles.header} type="backgroundElement">
+          {search.photoUrls.length > 0 && search.photoUrls[0] !== failedHeaderThumbnailUrl && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View photo"
+              onPress={() => setPhotoModalOpen(true)}>
+              <Image
+                source={{ uri: search.photoUrls[0] }}
+                style={styles.headerThumbnail}
+                contentFit="cover"
+                onError={() => setFailedHeaderThumbnailUrl(search.photoUrls[0])}
+              />
+            </Pressable>
+          )}
           <ThemedText type="smallBold">{search.subjectName}</ThemedText>
         </ThemedView>
 
@@ -412,6 +435,13 @@ export default function MapScreen() {
           onSubmitted={refreshSegments}
         />
       )}
+
+      <SubjectPhotoModal
+        visible={photoModalOpen}
+        subjectName={search.subjectName}
+        photoUrls={search.photoUrls}
+        onClose={() => setPhotoModalOpen(false)}
+      />
     </ThemedView>
   );
 }
@@ -447,9 +477,17 @@ const styles = StyleSheet.create({
   },
   header: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
+  },
+  headerThumbnail: {
+    width: 28,
+    height: 28,
+    borderRadius: Spacing.one,
   },
   legend: {
     alignSelf: 'flex-start',

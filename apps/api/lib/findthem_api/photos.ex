@@ -1,8 +1,9 @@
 defmodule FindThemApi.Photos do
   @moduledoc """
-  Subject photo upload/serving (Story 27) — coordinator-only, never sent in
-  any volunteer-facing payload (see VolunteerSearchJSON, which doesn't
-  include photo_urls at all).
+  Subject photo upload/serving (Story 27). photo_urls is exposed in both
+  the coordinator-facing SearchJSON and the volunteer-facing
+  VolunteerSearchJSON — a volunteer searching for someone needs to know
+  what they look like, so this isn't coordinator-only despite the name.
   """
 
   require Logger
@@ -122,9 +123,15 @@ defmodule FindThemApi.Photos do
   # Computed at read time, not stored — keeps the bucket private (no public
   # bucket policy needed) and access control piggybacks on whatever already
   # gated the request that's rendering these (owner-scoped Clerk auth for
-  # the coordinator endpoints this is used from). A key whose presign fails
-  # is dropped rather than surfacing an error for the whole search — one
-  # bad photo shouldn't 500 the rest of the search's details.
+  # the coordinator endpoints, volunteer token auth for the volunteer
+  # endpoint). A key whose presign fails is dropped rather than surfacing
+  # an error for the whole search — one bad photo shouldn't 500 the rest
+  # of the search's details. The whole call is also rescued: this runs
+  # inline inside both SearchJSON and VolunteerSearchJSON's render path,
+  # so a config problem (e.g. a missing R2 bucket env var, which raises
+  # via Keyword.fetch! rather than returning an error tuple) must degrade
+  # to no photos rather than 500ing the entire search/segments/assignments
+  # response out from under a volunteer mid-search.
   def presigned_urls(%Search{photo_urls: keys}) do
     storage = storage_client()
 
@@ -134,6 +141,10 @@ defmodule FindThemApi.Photos do
         {:error, _reason} -> []
       end
     end)
+  rescue
+    error ->
+      Logger.error("presigned_urls failed, degrading to no photos: #{Exception.format(:error, error, __STACKTRACE__)}")
+      []
   end
 
   defp validate_count(%Search{photo_urls: urls}) do

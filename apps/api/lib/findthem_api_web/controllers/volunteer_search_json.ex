@@ -1,5 +1,10 @@
 defmodule FindThemApiWeb.VolunteerSearchJSON do
-  # No photos, no coordinator PII beyond contact_phone, no join_token.
+  alias FindThemApi.Photos
+
+  # No coordinator PII beyond contact_phone, no join_token. photo_urls IS
+  # included (subject photos, Story 27) — a volunteer searching for
+  # someone needs to know what they look like; short-lived presigned URLs
+  # generated the same way as the coordinator-facing SearchJSON.
   def show(%{search: search, segments: segments, generation: generation, my_segment_ids: my_segment_ids}) do
     %{
       data: %{
@@ -17,6 +22,7 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
       subject_type: search.subject_type,
       subject_name: search.subject_name,
       subject_details: search.subject_details,
+      photo_urls: Photos.presigned_urls(search),
       status: search.status,
       contact_phone: search.contact_phone,
       lkp_lat: search.lkp_lat,

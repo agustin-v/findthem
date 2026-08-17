@@ -152,6 +152,7 @@ describe('getVolunteerSearch', () => {
               lkp_lng: 12.5,
               lkp_address: 'Via del Corso',
               lkp_at: '2026-08-01T10:00:00Z',
+              photo_urls: ['https://signed.example.com/searches/search-1/a.jpg'],
             },
             segments: [{ segment_id: 0, status: 'not_assigned', searched_at: null }],
             generation: {
@@ -186,6 +187,7 @@ describe('getVolunteerSearch', () => {
       lkpLng: 12.5,
       lkpAddress: 'Via del Corso',
       lkpAt: '2026-08-01T10:00:00Z',
+      photoUrls: ['https://signed.example.com/searches/search-1/a.jpg'],
     });
     expect(result.segments).toEqual([{ segmentId: 0, status: 'not_assigned', searchedAt: null }]);
     expect(result.generation?.segments.features).toHaveLength(1);
@@ -212,6 +214,7 @@ describe('getVolunteerSearch', () => {
               lkp_lng: null,
               lkp_address: null,
               lkp_at: null,
+              photo_urls: [],
             },
             segments: [],
             generation: null,

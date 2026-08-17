@@ -148,6 +148,7 @@ export interface VolunteerSearchInfo {
   lkpLng: number | null;
   lkpAddress: string | null;
   lkpAt: string | null;
+  photoUrls: string[];
 }
 
 export interface VolunteerSegment {
@@ -195,6 +196,7 @@ interface RemoteVolunteerSearchData {
     lkp_lng: number | null;
     lkp_address: string | null;
     lkp_at: string | null;
+    photo_urls: string[];
   };
   segments: RemoteSegment[];
   generation: RemoteGeneration | null;
@@ -226,6 +228,7 @@ export async function getVolunteerSearch(token: string): Promise<VolunteerSearch
       lkpLng: data.search.lkp_lng,
       lkpAddress: data.search.lkp_address,
       lkpAt: data.search.lkp_at,
+      photoUrls: data.search.photo_urls,
     },
     segments: data.segments.map(mapVolunteerSegment),
     generation: data.generation ? { segments: data.generation.response.segments } : null,

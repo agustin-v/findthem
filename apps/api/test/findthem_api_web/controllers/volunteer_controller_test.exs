@@ -1,7 +1,12 @@
 defmodule FindThemApiWeb.VolunteerControllerTest do
   use FindThemApiWeb.ConnCase, async: true
 
-  alias FindThemApi.{Accounts, Searches, Volunteers, Segments}
+  import Mox
+
+  alias FindThemApi.{Accounts, Repo, Searches, Volunteers, Segments}
+  alias FindThemApi.Photos.StorageMock
+
+  setup :verify_on_exit!
 
   setup do
     {:ok, owner} = Accounts.get_or_provision("user_owner_vol", %{email: "vol@example.com"})
@@ -77,7 +82,7 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert json_response(conn, 401)
   end
 
-  test "an approved volunteer's token can access GET /volunteer/search, no photos/join_token leaked",
+  test "an approved volunteer's token can access GET /volunteer/search, no join_token leaked",
        %{conn: conn, search: search} do
     {_volunteer, token} = approved_volunteer(search)
 
@@ -87,10 +92,57 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert data["search"]["subject_name"] == "Marco Rossi"
     assert data["search"]["contact_phone"] == "+390612345"
     refute Map.has_key?(data["search"], "join_token")
-    refute Map.has_key?(data["search"], "photo_urls")
+    assert data["search"]["photo_urls"] == []
     assert data["segments"] == []
     assert data["generation"] == nil
     assert data["my_segment_ids"] == []
+  end
+
+  test "GET /volunteer/search includes signed photo URLs — a volunteer needs to know who they're looking for",
+       %{conn: conn, search: search} do
+    {:ok, search} =
+      search
+      |> Ecto.Changeset.change(photo_urls: ["searches/#{search.id}/a.jpg"])
+      |> Repo.update()
+
+    expect(StorageMock, :presigned_url, fn key ->
+      {:ok, "https://signed.example.com/#{key}"}
+    end)
+
+    {_volunteer, token} = approved_volunteer(search)
+
+    conn = conn |> auth(token) |> get(~p"/volunteer/search")
+
+    assert %{"data" => data} = json_response(conn, 200)
+    assert [url] = data["search"]["photo_urls"]
+    assert url == "https://signed.example.com/searches/#{search.id}/a.jpg"
+  end
+
+  test "a second search's volunteer cannot see the first search's photos", %{
+    conn: conn,
+    search: search
+  } do
+    {:ok, owner2} = Accounts.get_or_provision("user_owner_vol3", %{email: "vol3@example.com"})
+
+    {:ok, other_search} =
+      Searches.create_search(owner2.id, %{
+        subject_type: "person",
+        subject_name: "Other",
+        contact_phone: "+390612345"
+      })
+
+    {:ok, _search} =
+      search
+      |> Ecto.Changeset.change(photo_urls: ["searches/#{search.id}/a.jpg"])
+      |> Repo.update()
+
+    {_other_volunteer, other_token} = approved_volunteer(other_search)
+
+    conn = conn |> auth(other_token) |> get(~p"/volunteer/search")
+
+    assert %{"data" => data} = json_response(conn, 200)
+    assert data["search"]["id"] == other_search.id
+    assert data["search"]["photo_urls"] == []
   end
 
   test "GET /volunteer/search reports my_segment_ids scoped to the requesting volunteer only", %{

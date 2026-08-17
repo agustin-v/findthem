@@ -186,4 +186,16 @@ defmodule FindThemApi.PhotosTest do
   test "presigned_urls/1 returns an empty list for a search with no photos", %{search: search} do
     assert Photos.presigned_urls(search) == []
   end
+
+  test "presigned_urls/1 degrades to an empty list instead of raising when the storage client raises",
+       %{search: search} do
+    {:ok, search} =
+      search
+      |> Ecto.Changeset.change(photo_urls: ["searches/#{search.id}/a.jpg"])
+      |> Repo.update()
+
+    expect(StorageMock, :presigned_url, fn _key -> raise "missing R2 bucket config" end)
+
+    assert Photos.presigned_urls(search) == []
+  end
 end

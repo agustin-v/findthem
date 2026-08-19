@@ -46,6 +46,8 @@ defmodule FindThemApiWeb.Router do
     get "/search", VolunteerSearchController, :show
     patch "/segments/:segment_id", VolunteerSegmentController, :update
     post "/remarks", VolunteerRemarkController, :create
+    get "/messages", VolunteerMessageController, :index
+    post "/messages", VolunteerMessageController, :create
   end
 
   scope "/api", FindThemApiWeb do
@@ -59,6 +61,7 @@ defmodule FindThemApiWeb.Router do
       post "/segment_assignments", SegmentAssignmentController, :create
       delete "/segment_assignments/:segment_id/:volunteer_id", SegmentAssignmentController, :delete
       resources "/remarks", RemarkController, only: [:index, :create]
+      resources "/messages", MessageController, only: [:index, :create]
       resources "/volunteers", SearchVolunteerController, only: [:index, :update]
       post "/photos", PhotoController, :create
       post "/join_token/rotate", JoinTokenController, :rotate

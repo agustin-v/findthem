@@ -2,13 +2,14 @@ defmodule FindThemApiWeb.SearchChannel do
   @moduledoc """
   Topic `search:<id>`. Joining subscribes this channel process to the same
   raw `search:<id>` PubSub topic every context already broadcasts to
-  (Volunteers, Searches, Segments, SegmentAssignments, Remarks).
+  (Volunteers, Searches, Segments, SegmentAssignments, Remarks, Messages).
 
   `join/3` only authorizes *access to the topic* — it does NOT mean every
   event on that topic is safe to hand to every joined identity. Coordinator
   and volunteer sockets share one topic, but several event payloads carry
   data the REST API deliberately withholds from volunteers (the search's
-  `join_token`, other volunteers' name/phone). `handle_info/2` below is where that scoping is enforced,
+  `join_token`, other volunteers' name/phone, another volunteer's private
+  message thread). `handle_info/2` below is where that scoping is enforced,
   per event, per identity — every clause must decide who it's safe to push
   to, not just how to shape the payload. When adding a new broadcast event,
   the safe default is "coordinator only" unless you've deliberately checked
@@ -76,6 +77,19 @@ defmodule FindThemApiWeb.SearchChannel do
     {:noreply, socket}
   end
 
+  # Coordinator always; a volunteer only ever sees their own thread — same
+  # scoping VolunteerMessageController.index already enforces over REST
+  # (list_by_search_and_volunteer(volunteer.search_id, volunteer.id)). Do
+  # not relax this to "any volunteer on this search" — these are private
+  # coordinator<->volunteer threads, not a shared board like Remarks above.
+  def handle_info({event, %FindThemApi.Messages.Message{} = message}, socket) do
+    if authorized_for_thread?(socket, message.volunteer_id) do
+      push(socket, to_string(event), %{data: FindThemApiWeb.MessageJSON.message_data(message)})
+    end
+
+    {:noreply, socket}
+  end
+
   def handle_info({event, %FindThemApi.Searches.Segment{} = segment}, socket) do
     push(socket, to_string(event), %{data: FindThemApiWeb.SegmentJSON.segment_data(segment)})
     {:noreply, socket}
@@ -132,4 +146,11 @@ defmodule FindThemApiWeb.SearchChannel do
 
   defp coordinator?(%{assigns: %{identity: {:coordinator, _}}}), do: true
   defp coordinator?(_socket), do: false
+
+  defp authorized_for_thread?(%{assigns: %{identity: {:coordinator, _}}}, _volunteer_id), do: true
+
+  defp authorized_for_thread?(%{assigns: %{identity: {:volunteer, volunteer}}}, volunteer_id),
+    do: volunteer.id == volunteer_id
+
+  defp authorized_for_thread?(_socket, _volunteer_id), do: false
 end

@@ -36,8 +36,14 @@ defmodule FindThemApi.Remarks.Remark do
     # see the create_remarks migration); without a length cap here, an
     # oversized value doesn't get a clean 422, it hits Postgres and raises
     # an unhandled exception. lat/lng have no DB-level bound at all.
-    |> validate_length(:kind, max: 100)
-    |> validate_length(:text, max: 255)
+    #
+    # count: :codepoints, not Ecto's default of :graphemes — varchar bounds
+    # by character (~codepoint), not grapheme cluster, so a combining-mark/
+    # ZWJ-heavy string could pass a grapheme-counted check yet still
+    # overflow the column (see Message.changeset for the same fix, found
+    # via a family-emoji repro).
+    |> validate_length(:kind, max: 100, count: :codepoints)
+    |> validate_length(:text, max: 255, count: :codepoints)
     |> validate_number(:lat, greater_than_or_equal_to: -90, less_than_or_equal_to: 90)
     |> validate_number(:lng, greater_than_or_equal_to: -180, less_than_or_equal_to: 180)
     |> foreign_key_constraint(:search_id)

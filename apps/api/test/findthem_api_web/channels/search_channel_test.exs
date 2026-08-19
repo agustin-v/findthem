@@ -1,7 +1,7 @@
 defmodule FindThemApiWeb.SearchChannelTest do
   use FindThemApiWeb.ChannelCase, async: false
 
-  alias FindThemApi.{Accounts, Remarks, Searches, Volunteers}
+  alias FindThemApi.{Accounts, Messages, Remarks, Searches, Volunteers}
   alias FindThemApi.ClerkFixtures
   alias FindThemApiWeb.UserSocket
 
@@ -124,6 +124,50 @@ defmodule FindThemApiWeb.SearchChannelTest do
     assert_push "remark_created", %{data: data}
     assert data.id == remark.id
     assert data.text == "Bridge is down"
+    _ = socket
+  end
+
+  test "relays a message_created broadcast to a joined coordinator", %{
+    owner: owner,
+    search: search
+  } do
+    {volunteer, _token} = approved_volunteer(search)
+
+    socket = connect_coordinator(owner)
+    {:ok, _reply, socket} = subscribe_and_join(socket, "search:#{search.id}", %{})
+
+    {:ok, message} =
+      Messages.create_message(search.id, %{
+        "id" => Ecto.UUID.generate(),
+        "volunteer_id" => volunteer.id,
+        "sender" => "volunteer",
+        "text" => "On my way"
+      })
+
+    assert_push "message_created", %{data: data}
+    assert data.id == message.id
+    assert data.text == "On my way"
+    _ = socket
+  end
+
+  test "does NOT relay another volunteer's private message thread", %{search: search} do
+    {_recipient, recipient_token} = approved_volunteer(search)
+    {:ok, socket} = connect(UserSocket, %{"token" => recipient_token})
+    {:ok, _reply, socket} = subscribe_and_join(socket, "search:#{search.id}", %{})
+
+    {:ok, other_volunteer} =
+      Volunteers.join_volunteer(search.id, %{name: "Andrea", phone: "+390698766"})
+
+    {:ok, _approved} = Volunteers.update_volunteer(other_volunteer, %{status: "approved"})
+
+    Messages.create_message(search.id, %{
+      "id" => Ecto.UUID.generate(),
+      "volunteer_id" => other_volunteer.id,
+      "sender" => "coordinator",
+      "text" => "PRIVATE: for Andrea only"
+    })
+
+    refute_push "message_created", %{}
     _ = socket
   end
 

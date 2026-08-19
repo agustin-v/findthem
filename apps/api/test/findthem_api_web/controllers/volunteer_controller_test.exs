@@ -253,6 +253,67 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert json_response(conn, 422)
   end
 
+  test "POST /volunteer/messages round-trips a client-supplied id and forces volunteer_id/sender to self",
+       %{conn: conn, search: search} do
+    {volunteer, token} = approved_volunteer(search)
+    id = Ecto.UUID.generate()
+
+    conn =
+      conn
+      |> auth(token)
+      |> post(~p"/volunteer/messages", %{
+        "message" => %{
+          "id" => id,
+          "volunteer_id" => "some-other-volunteer-id",
+          "sender" => "coordinator",
+          "text" => "On my way"
+        }
+      })
+
+    assert %{"data" => data} = json_response(conn, 201)
+    assert data["id"] == id
+    assert data["volunteer_id"] == volunteer.id
+    assert data["sender"] == "volunteer"
+  end
+
+  test "POST /volunteer/messages with a non-map message value returns 422 instead of crashing", %{
+    conn: conn,
+    search: search
+  } do
+    {_volunteer, token} = approved_volunteer(search)
+
+    conn = conn |> auth(token) |> post(~p"/volunteer/messages", %{"message" => nil})
+
+    assert json_response(conn, 422)
+  end
+
+  test "GET /volunteer/messages returns only this volunteer's own thread", %{
+    conn: conn,
+    search: search
+  } do
+    {volunteer, token} = approved_volunteer(search)
+    {:ok, other_volunteer, other_token} = another_approved_volunteer(search)
+
+    conn
+    |> auth(token)
+    |> post(~p"/volunteer/messages", %{
+      "message" => %{"id" => Ecto.UUID.generate(), "text" => "From Giulia"}
+    })
+
+    conn
+    |> auth(other_token)
+    |> post(~p"/volunteer/messages", %{
+      "message" => %{"id" => Ecto.UUID.generate(), "text" => "From Luca"}
+    })
+
+    conn = conn |> auth(token) |> get(~p"/volunteer/messages")
+
+    assert %{"data" => [message]} = json_response(conn, 200)
+    assert message["text"] == "From Giulia"
+    assert message["volunteer_id"] == volunteer.id
+    refute message["volunteer_id"] == other_volunteer.id
+  end
+
   test "GET /volunteer/session reports removed status for a removed volunteer's own token", %{
     conn: conn,
     search: search

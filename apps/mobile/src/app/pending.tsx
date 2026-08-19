@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { Check } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,15 +7,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { getVolunteerSession, isAuthError } from '@/lib/api';
+import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { getVolunteerSearch, getVolunteerSession, isAuthError } from '@/lib/api';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 
 const POLL_INTERVAL_MS = 4000;
 
+interface Handoff {
+  subjectName: string;
+  area: string | null;
+}
+
 export default function PendingScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const [name, setName] = useState<string | null>(null);
+  const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [removed, setRemoved] = useState(false);
   const [expired, setExpired] = useState(false);
   const [connectionTrouble, setConnectionTrouble] = useState(false);
@@ -50,7 +59,19 @@ export default function PendingScreen() {
 
           if (session.status === 'approved') {
             if (pollRef.current) clearInterval(pollRef.current);
-            router.replace('/map');
+            // A tap-through handoff screen ("You're approved") rather than
+            // silently dropping the volunteer straight onto the map — the
+            // subject/area details it shows come from a one-time fetch;
+            // if that fails, just proceed straight to /map instead of
+            // blocking the volunteer on a screen that failed to load.
+            try {
+              const { search } = await getVolunteerSearch(token);
+              if (cancelled) return;
+              setHandoff({ subjectName: search.subjectName, area: search.lkpAddress });
+            } catch {
+              if (cancelled) return;
+              router.replace('/map');
+            }
           } else if (session.status === 'removed') {
             if (pollRef.current) clearInterval(pollRef.current);
             setRemoved(true);
@@ -105,6 +126,35 @@ export default function PendingScreen() {
     );
   }
 
+  if (handoff) {
+    return (
+      <ThemedView style={styles.centered}>
+        <SafeAreaView style={styles.safeArea}>
+          <ThemedView type="successSoft" style={styles.checkBadge}>
+            <Check color={theme.success} size={32} />
+          </ThemedView>
+          <ThemedText type="subtitle" style={styles.centerText}>
+            You&apos;re approved
+          </ThemedText>
+          <ThemedText themeColor="textSecondary" style={styles.centerText}>
+            You&apos;re now part of the search for {handoff.subjectName}.
+          </ThemedText>
+
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <ThemedText type="smallBold">{handoff.subjectName}</ThemedText>
+            {handoff.area && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {handoff.area}
+              </ThemedText>
+            )}
+          </ThemedView>
+
+          <PrimaryButton label="View my area →" onPress={() => router.replace('/map')} />
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.centered}>
       <SafeAreaView style={styles.safeArea}>
@@ -144,7 +194,20 @@ const styles = StyleSheet.create({
   centerText: {
     textAlign: 'center',
   },
+  checkBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  card: {
+    width: '100%',
+    borderRadius: Radius.card,
+    padding: Spacing.four,
+    gap: Spacing.half,
+  },
   error: {
-    color: '#e5484d',
+    color: '#B3432B',
   },
 });

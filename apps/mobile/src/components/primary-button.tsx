@@ -1,7 +1,8 @@
 import { ActivityIndicator, Pressable, StyleSheet, type GestureResponderEvent } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 interface PrimaryButtonProps {
   label: string;
@@ -18,6 +19,12 @@ export function PrimaryButton({
   loading,
   variant = 'primary',
 }: PrimaryButtonProps) {
+  const theme = useTheme();
+  // A disabled primary button goes to the muted/peach tone from the
+  // design rather than just dimming opacity — a loading (in-flight)
+  // primary button stays full-strength since that's not a "can't submit"
+  // state, just a "submitting" one.
+  const isPrimaryMuted = variant === 'primary' && disabled && !loading;
   const isDisabled = disabled || loading;
 
   return (
@@ -28,16 +35,18 @@ export function PrimaryButton({
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.base,
-        variant === 'primary' ? styles.primary : styles.secondary,
-        isDisabled && styles.disabled,
+        variant === 'primary'
+          ? { backgroundColor: isPrimaryMuted ? theme.primaryMuted : theme.primary }
+          : { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: theme.border },
+        isDisabled && !isPrimaryMuted && styles.disabled,
         pressed && !isDisabled && styles.pressed,
       ]}>
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? '#ffffff' : '#208AEF'} />
+        <ActivityIndicator color={variant === 'primary' ? theme.primaryText : theme.text} />
       ) : (
         <ThemedText
           type="smallBold"
-          style={variant === 'primary' ? styles.primaryText : styles.secondaryText}>
+          style={{ color: variant === 'primary' ? theme.primaryText : theme.text }}>
           {label}
         </ThemedText>
       )}
@@ -47,30 +56,16 @@ export function PrimaryButton({
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 48,
-    borderRadius: Spacing.two,
+    minHeight: 52,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.four,
-  },
-  primary: {
-    backgroundColor: '#208AEF',
-  },
-  secondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#208AEF',
   },
   disabled: {
     opacity: 0.5,
   },
   pressed: {
-    opacity: 0.8,
-  },
-  primaryText: {
-    color: '#ffffff',
-  },
-  secondaryText: {
-    color: '#208AEF',
+    opacity: 0.85,
   },
 });

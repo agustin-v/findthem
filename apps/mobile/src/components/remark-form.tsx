@@ -1,22 +1,23 @@
 import * as Crypto from 'expo-crypto';
+import { Eye, MapPin, StickyNote, TriangleAlert } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LocationConsentNotice } from '@/components/location-consent-notice';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useLocationPermission } from '@/hooks/useLocationPermission';
 import { ApiError, createRemark, type RemarkKind } from '@/lib/api';
 import { useTheme } from '@/hooks/use-theme';
 import { getCurrentCoords } from '@/lib/location';
 
-const REMARK_KINDS: { value: RemarkKind; label: string }[] = [
-  { value: 'sighting', label: 'Sighting' },
-  { value: 'hazard', label: 'Hazard' },
-  { value: 'note', label: 'Note' },
+const REMARK_KINDS: { value: RemarkKind; label: string; icon: typeof Eye }[] = [
+  { value: 'sighting', label: 'Sighting', icon: Eye },
+  { value: 'hazard', label: 'Hazard', icon: TriangleAlert },
+  { value: 'note', label: 'Note', icon: StickyNote },
 ];
 
 interface RemarkFormProps {
@@ -88,32 +89,37 @@ export function RemarkForm({ visible, token, onClose, onSubmitted }: RemarkFormP
         <ThemedView style={styles.sheet}>
           <SafeAreaView>
             <ScrollView contentContainerStyle={styles.content}>
+              <View style={styles.sheetHandle} />
               <ThemedText type="subtitle">Report something</ThemedText>
 
-              <ThemedText type="smallBold" style={styles.sectionTitle}>
+              <ThemedText type="code" themeColor="textSecondary" style={styles.sectionTitle}>
                 Type
               </ThemedText>
               <View style={styles.chipRow}>
                 {REMARK_KINDS.map((option) => {
                   const selected = kind === option.value;
+                  const Icon = option.icon;
                   return (
-                    <ThemedText
+                    <Pressable
                       key={option.value}
-                      type="small"
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
                       onPress={() => setKind(option.value)}
                       style={[
                         styles.chip,
-                        { borderColor: theme.textSecondary },
-                        selected && styles.chipSelected,
+                        { backgroundColor: selected ? theme.primary : theme.backgroundSelected },
                       ]}>
-                      {option.label}
-                    </ThemedText>
+                      <Icon color={selected ? theme.primaryText : theme.text} size={16} />
+                      <ThemedText type="smallBold" style={{ color: selected ? theme.primaryText : theme.text }}>
+                        {option.label}
+                      </ThemedText>
+                    </Pressable>
                   );
                 })}
               </View>
 
-              <ThemedText type="smallBold" style={styles.sectionTitle}>
-                Details (optional)
+              <ThemedText type="code" themeColor="textSecondary" style={styles.sectionTitle}>
+                Details · optional
               </ThemedText>
               <TextInput
                 value={text}
@@ -122,14 +128,20 @@ export function RemarkForm({ visible, token, onClose, onSubmitted }: RemarkFormP
                 placeholderTextColor={theme.textSecondary}
                 multiline
                 numberOfLines={3}
-                style={[
-                  styles.input,
-                  { color: theme.text, borderColor: theme.textSecondary },
-                ]}
+                style={[styles.input, { color: theme.text, borderColor: theme.border }]}
               />
 
-              {locationStatus !== 'granted' && locationStatus !== 'checking' && (
-                <LocationConsentNotice status={locationStatus} onRequest={requestLocation} />
+              {locationStatus === 'granted' ? (
+                <View style={[styles.locationBanner, { backgroundColor: theme.successSoft }]}>
+                  <MapPin color={theme.success} size={16} />
+                  <ThemedText type="small" style={[styles.locationBannerText, { color: theme.success }]}>
+                    Location on — this report will be pinned to where you are now.
+                  </ThemedText>
+                </View>
+              ) : (
+                locationStatus !== 'checking' && (
+                  <LocationConsentNotice status={locationStatus} onRequest={requestLocation} />
+                )
               )}
 
               {error && (
@@ -155,13 +167,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   sheet: {
-    borderTopLeftRadius: Spacing.three,
-    borderTopRightRadius: Spacing.three,
+    borderTopLeftRadius: Radius.sheet,
+    borderTopRightRadius: Radius.sheet,
     maxHeight: '85%',
   },
   content: {
     padding: Spacing.four,
     gap: Spacing.two,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.35)',
+    marginBottom: Spacing.two,
   },
   sectionTitle: {
     marginTop: Spacing.two,
@@ -172,27 +192,34 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   chip: {
-    borderWidth: 1,
-    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    borderRadius: Radius.chip,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one,
+    paddingVertical: Spacing.two,
     overflow: 'hidden',
   },
-  chipSelected: {
-    backgroundColor: '#208AEF',
-    borderColor: '#208AEF',
-    color: '#ffffff',
-  },
   input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
+    borderWidth: 1.5,
+    borderRadius: Radius.input,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     fontSize: 16,
     minHeight: 80,
     textAlignVertical: 'top',
   },
+  locationBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.two,
+    borderRadius: Radius.input,
+    padding: Spacing.three,
+  },
+  locationBannerText: {
+    flex: 1,
+  },
   error: {
-    color: '#e5484d',
+    color: '#B3432B',
   },
 });

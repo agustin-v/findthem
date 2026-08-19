@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { MapPin } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getVolunteerSession, isAuthError } from '@/lib/api';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
@@ -77,10 +78,10 @@ export default function JoinEntryScreen() {
     return (
       <ThemedView style={styles.centered}>
         <SafeAreaView style={styles.safeArea}>
-          <ThemedText type="subtitle" style={styles.title}>
+          <ThemedText type="subtitle" style={styles.centerText}>
             Couldn&apos;t check your session
           </ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.subtitle}>
+          <ThemedText themeColor="textSecondary" style={styles.centerText}>
             Check your connection and try again.
           </ThemedText>
           <PrimaryButton label="Retry" onPress={() => setRetryCount((c) => c + 1)} />
@@ -103,26 +104,33 @@ export default function JoinEntryScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedText type="title" style={styles.title}>
-          FindThem
-        </ThemedText>
-        <ThemedText type="default" themeColor="textSecondary" style={styles.subtitle}>
-          Enter the code a coordinator shared with you to join a search.
-        </ThemedText>
+        <ThemedView type="backgroundElement" style={styles.card}>
+          <ThemedView type="primary" style={styles.iconBadge}>
+            <MapPin color={theme.primaryText} size={26} />
+          </ThemedView>
+          <ThemedText type="title">FindThem</ThemedText>
+          <ThemedText type="default" themeColor="textSecondary" style={styles.subtitle}>
+            Join a search with the code your coordinator shared.
+          </ThemedText>
 
-        <TextInput
-          value={code}
-          onChangeText={setCode}
-          placeholder="Join code"
-          placeholderTextColor={theme.textSecondary}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          style={[styles.input, { color: theme.text, borderColor: theme.textSecondary }]}
-          onSubmitEditing={handleSubmit}
-          returnKeyType="go"
-        />
+          <TextInput
+            value={code}
+            onChangeText={setCode}
+            placeholder="Join code"
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            style={[styles.input, { color: theme.text, borderColor: theme.primary }]}
+            onSubmitEditing={handleSubmit}
+            returnKeyType="go"
+          />
 
-        <PrimaryButton label="Continue" onPress={handleSubmit} disabled={!code.trim()} />
+          <PrimaryButton label="Continue" onPress={handleSubmit} disabled={!code.trim()} />
+        </ThemedView>
+
+        <ThemedText type="small" themeColor="textSecondary" style={styles.caption}>
+          Your last search reopens automatically.
+        </ThemedText>
       </SafeAreaView>
     </ThemedView>
   );
@@ -146,20 +154,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     gap: Spacing.three,
   },
-  title: {
+  centerText: {
     textAlign: 'center',
+  },
+  card: {
+    borderRadius: Radius.card,
+    padding: Spacing.five,
+    gap: Spacing.two,
+  },
+  iconBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: Spacing.three,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.two,
   },
   subtitle: {
+    marginBottom: Spacing.two,
+  },
+  caption: {
     textAlign: 'center',
-    marginBottom: Spacing.three,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
+    borderWidth: 1.5,
+    borderRadius: Radius.input,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-    fontSize: 18,
-    letterSpacing: 2,
+    fontSize: 20,
+    letterSpacing: 4,
     textAlign: 'center',
+    fontFamily: 'GeistMono_500Medium',
   },
 });

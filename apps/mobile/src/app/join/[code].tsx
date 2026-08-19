@@ -7,7 +7,7 @@ import { ConsentRow } from '@/components/consent-row';
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import {
   ApiError,
@@ -149,70 +149,82 @@ export default function JoinConsentScreen() {
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <SafeAreaView style={styles.safeArea}>
-          <ThemedText type="subtitle">{preview.subjectName}</ThemedText>
-          {preview.area && (
-            <ThemedText themeColor="textSecondary">Last seen near {preview.area}</ThemedText>
-          )}
-
-          <ThemedText type="smallBold" style={styles.sectionTitle}>
-            Your details
-          </ThemedText>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="Full name"
-            placeholderTextColor={theme.textSecondary}
-            style={[styles.input, { color: theme.text, borderColor: theme.textSecondary }]}
-          />
-          <TextInput
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="Phone number"
-            placeholderTextColor={theme.textSecondary}
-            keyboardType="phone-pad"
-            style={[styles.input, { color: theme.text, borderColor: theme.textSecondary }]}
-          />
-
-          <ThemedText type="smallBold" style={styles.sectionTitle}>
-            How are you helping? (optional)
-          </ThemedText>
-          <ThemedView style={styles.chipRow}>
-            {RESOURCE_TYPES.map((option) => {
-              const selected = resourceType === option.value;
-              return (
-                <ThemedText
-                  key={option.value}
-                  type="small"
-                  onPress={() => setResourceType(selected ? undefined : option.value)}
-                  style={[
-                    styles.chip,
-                    { borderColor: theme.textSecondary },
-                    selected && styles.chipSelected,
-                  ]}>
-                  {option.label}
+          <ThemedView type="backgroundElement" style={[styles.card, styles.subjectRow]}>
+            <ThemedView type="backgroundSelected" style={styles.subjectThumb} />
+            <ThemedView style={styles.subjectInfo}>
+              <ThemedText type="smallBold">{preview.subjectName}</ThemedText>
+              {preview.area && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  Last seen near {preview.area}
                 </ThemedText>
-              );
-            })}
+              )}
+            </ThemedView>
           </ThemedView>
 
-          <ThemedText type="smallBold" style={styles.sectionTitle}>
-            Consent
-          </ThemedText>
-          <ConsentRow
-            label="I agree to share my name with the search coordinator."
-            checked={consentName}
-            onToggle={() => setConsentName((v) => !v)}
-          />
-          <ConsentRow
-            label="I agree to share my location while helping with this search."
-            checked={consentLocation}
-            onToggle={() => setConsentLocation((v) => !v)}
-          />
-          <ConsentRow
-            label="I agree to share my phone number with the search coordinator."
-            checked={consentPhone}
-            onToggle={() => setConsentPhone((v) => !v)}
-          />
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <ThemedText type="code" themeColor="textSecondary">
+              Your details
+            </ThemedText>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Full name"
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+            />
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Phone number"
+              placeholderTextColor={theme.textSecondary}
+              keyboardType="phone-pad"
+              style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+            />
+          </ThemedView>
+
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <ThemedText type="code" themeColor="textSecondary">
+              How are you helping? · optional
+            </ThemedText>
+            <ThemedView style={styles.chipRow}>
+              {RESOURCE_TYPES.map((option) => {
+                const selected = resourceType === option.value;
+                return (
+                  <ThemedText
+                    key={option.value}
+                    type="smallBold"
+                    onPress={() => setResourceType(selected ? undefined : option.value)}
+                    style={[
+                      styles.chip,
+                      { backgroundColor: theme.backgroundSelected, color: theme.text },
+                      selected && { backgroundColor: theme.primary, color: theme.primaryText },
+                    ]}>
+                    {option.label}
+                  </ThemedText>
+                );
+              })}
+            </ThemedView>
+          </ThemedView>
+
+          <ThemedView type="backgroundElement" style={styles.card}>
+            <ConsentRow
+              label="Share my name"
+              checked={consentName}
+              onToggle={() => setConsentName((v) => !v)}
+            />
+            <ThemedView type="border" style={styles.divider} />
+            <ConsentRow
+              label="Share my location while helping"
+              checked={consentLocation}
+              onToggle={() => setConsentLocation((v) => !v)}
+            />
+            <ThemedView type="border" style={styles.divider} />
+            <ConsentRow
+              label="Share my phone number"
+              checked={consentPhone}
+              onToggle={() => setConsentPhone((v) => !v)}
+            />
+          </ThemedView>
 
           {submitError && (
             <ThemedText type="small" style={styles.error}>
@@ -250,19 +262,37 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.four,
-    gap: Spacing.two,
+    gap: Spacing.three,
   },
   centerText: {
     textAlign: 'center',
   },
-  sectionTitle: {
-    marginTop: Spacing.three,
+  card: {
+    borderRadius: Radius.card,
+    padding: Spacing.four,
+    gap: Spacing.two,
+  },
+  subjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  subjectThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.chip,
+  },
+  subjectInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  divider: {
+    height: 1,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
+    borderWidth: 1.5,
+    borderRadius: Radius.input,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.three,
     fontSize: 16,
   },
   chipRow: {
@@ -271,18 +301,12 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   chip: {
-    borderWidth: 1,
-    borderRadius: 999,
+    borderRadius: Radius.chip,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one,
+    paddingVertical: Spacing.two,
     overflow: 'hidden',
   },
-  chipSelected: {
-    backgroundColor: '#208AEF',
-    borderColor: '#208AEF',
-    color: '#ffffff',
-  },
   error: {
-    color: '#e5484d',
+    color: '#B3432B',
   },
 });

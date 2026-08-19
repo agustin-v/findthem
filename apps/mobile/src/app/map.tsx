@@ -8,6 +8,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
+import { Check, ChevronRight, Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
@@ -15,10 +16,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '@/components/primary-button';
 import { RemarkForm } from '@/components/remark-form';
+import { SubjectDetailsModal } from '@/components/subject-details-modal';
 import { SubjectPhotoModal } from '@/components/subject-photo-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import {
   getVolunteerSearch,
   isAuthError,
@@ -45,13 +48,22 @@ const EMPTY_SEGMENTS_FC: FeatureCollection<Polygon | MultiPolygon, SegmentProper
   type: 'FeatureCollection',
   features: [],
 };
-const MY_ASSIGNMENT_COLOR = '#fbbf24';
+const MY_ASSIGNMENT_COLOR = '#DD5A34';
 
 const STATUS_LABELS: Record<SegmentStatus, string> = {
   not_assigned: 'Not started',
   assigned: 'Assigned',
-  in_progress: 'In progress',
+  in_progress: 'Searching',
   searched: 'Searched',
+};
+
+// Headline shown above the sheet's action button — a friendlier framing
+// of the same status than the compact pill label alone.
+const STATUS_HEADLINES: Record<SegmentStatus, string> = {
+  not_assigned: 'Ready to search',
+  assigned: 'Ready to search',
+  in_progress: 'Searching now',
+  searched: 'Already searched',
 };
 
 // The legend shows one swatch per status — "searched" segments actually
@@ -67,6 +79,19 @@ const LEGEND_COLORS: Record<SegmentStatus, string> = {
 
 type ScreenState = 'loading' | 'ready' | 'retry' | 'expired';
 
+// "MISSING 3h" / "MISSING 2d" next to the area in the context bar — a
+// rough, human-scale sense of urgency from the search's last-known-position
+// timestamp, not a precision duration.
+function formatElapsed(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60000) return 'just now';
+  const hours = Math.floor(ms / 3600000);
+  if (hours < 1) return `${Math.floor(ms / 60000)}m`;
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 function toSegmentModel(segment: VolunteerSegment): SegmentStatusInfo {
   return {
     segmentId: segment.segmentId,
@@ -77,6 +102,7 @@ function toSegmentModel(segment: VolunteerSegment): SegmentStatusInfo {
 
 export default function MapScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const [screenState, setScreenState] = useState<ScreenState>('loading');
   const [search, setSearch] = useState<VolunteerSearchInfo | null>(null);
   const [segments, setSegments] = useState<VolunteerSegment[]>([]);
@@ -85,8 +111,11 @@ export default function MapScreen() {
   const [selectedSegment, setSelectedSegment] = useState<VolunteerSegment | null>(null);
   const [segmentActionError, setSegmentActionError] = useState<string | null>(null);
   const [updatingSegment, setUpdatingSegment] = useState(false);
+  const [confirmMarkSearched, setConfirmMarkSearched] = useState(false);
+  const [areaSearchedSuccess, setAreaSearchedSuccess] = useState(false);
   const [remarkFormOpen, setRemarkFormOpen] = useState(false);
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [failedHeaderThumbnailUrl, setFailedHeaderThumbnailUrl] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -237,8 +266,18 @@ export default function MapScreen() {
           : [...prev, updated];
       });
       setSelectedSegment(updated);
+
+      // "Mark as searched" is the one status change that closes the sheet
+      // and confirms first (see confirmMarkSearched below) — completing it
+      // gets a full-screen acknowledgment instead of just updating a pill
+      // in place, since it's the volunteer's signal that this area is done.
+      if (status === 'searched') {
+        setConfirmMarkSearched(false);
+        setAreaSearchedSuccess(true);
+      }
     } catch {
       setSegmentActionError('Could not update this segment. Please try again.');
+      setConfirmMarkSearched(false);
     } finally {
       setUpdatingSegment(false);
     }
@@ -351,7 +390,23 @@ export default function MapScreen() {
               />
             </Pressable>
           )}
-          <ThemedText type="smallBold">{search.subjectName}</ThemedText>
+          <View style={styles.headerInfo}>
+            <ThemedText type="smallBold">{search.subjectName}</ThemedText>
+            <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+              {[formatElapsed(search.lkpAt) && `Missing ${formatElapsed(search.lkpAt)}`, search.lkpAddress]
+                .filter(Boolean)
+                .join(' · ')}
+            </ThemedText>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setDetailsOpen(true)}
+            style={styles.detailsLink}>
+            <ThemedText type="small" style={{ color: theme.primary }}>
+              Details
+            </ThemedText>
+            <ChevronRight color={theme.primary} size={16} />
+          </Pressable>
         </ThemedView>
 
         <ThemedView style={styles.legend} type="backgroundElement">
@@ -376,11 +431,10 @@ export default function MapScreen() {
 
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Report something"
           onPress={() => setRemarkFormOpen(true)}
-          style={styles.fab}>
-          <ThemedText type="smallBold" style={styles.fabLabel}>
-            + Report
-          </ThemedText>
+          style={[styles.fab, { backgroundColor: theme.primary }]}>
+          <Plus color={theme.primaryText} size={26} />
         </Pressable>
       </SafeAreaView>
 
@@ -389,42 +443,151 @@ export default function MapScreen() {
         animationType="slide"
         transparent
         onRequestClose={() => setSelectedSegment(null)}>
-        <View style={styles.backdrop}>
-          <ThemedView style={styles.sheet}>
-            <SafeAreaView style={styles.sheetContent}>
-              {selectedSegment && (
-                <>
-                  <ThemedText type="subtitle">
-                    {STATUS_LABELS[selectedSegment.status]}
-                  </ThemedText>
-                  {segmentActionError && (
-                    <ThemedText type="small" style={styles.error}>
-                      {segmentActionError}
-                    </ThemedText>
-                  )}
-                  <PrimaryButton
-                    label="Start searching"
-                    variant="secondary"
-                    onPress={() => handleSetSegmentStatus('in_progress')}
-                    disabled={selectedSegment.status === 'in_progress' || updatingSegment}
-                    loading={updatingSegment}
-                  />
-                  <PrimaryButton
-                    label="Mark as searched"
-                    onPress={() => handleSetSegmentStatus('searched')}
-                    disabled={selectedSegment.status === 'searched' || updatingSegment}
-                    loading={updatingSegment}
-                  />
-                  <PrimaryButton
-                    label="Close"
-                    variant="secondary"
-                    onPress={() => setSelectedSegment(null)}
-                  />
-                </>
-              )}
-            </SafeAreaView>
+        <Pressable style={styles.backdrop} onPress={() => setSelectedSegment(null)}>
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            <ThemedView style={styles.sheet}>
+              <SafeAreaView style={styles.sheetContent}>
+                {selectedSegment && (
+                  <>
+                    <View style={styles.sheetHandle} />
+                    <View style={styles.sheetTopRow}>
+                      <ThemedText type="code" themeColor="textSecondary">
+                        Segment
+                      </ThemedText>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          {
+                            backgroundColor:
+                              selectedSegment.status === 'searched'
+                                ? theme.successSoft
+                                : selectedSegment.status === 'in_progress'
+                                  ? theme.primarySoft
+                                  : theme.backgroundSelected,
+                          },
+                        ]}>
+                        <ThemedText
+                          type="small"
+                          style={{
+                            color:
+                              selectedSegment.status === 'searched'
+                                ? theme.success
+                                : selectedSegment.status === 'in_progress'
+                                  ? theme.primary
+                                  : theme.textSecondary,
+                          }}>
+                          {STATUS_LABELS[selectedSegment.status]}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    <ThemedText type="subtitle">{STATUS_HEADLINES[selectedSegment.status]}</ThemedText>
+
+                    {segmentActionError && (
+                      <ThemedText type="small" style={styles.error}>
+                        {segmentActionError}
+                      </ThemedText>
+                    )}
+
+                    <PrimaryButton
+                      label="Start searching"
+                      variant="secondary"
+                      onPress={() => handleSetSegmentStatus('in_progress')}
+                      disabled={selectedSegment.status === 'in_progress' || updatingSegment}
+                      loading={updatingSegment}
+                    />
+                    <PrimaryButton
+                      label="Mark as searched"
+                      onPress={() => setConfirmMarkSearched(true)}
+                      disabled={selectedSegment.status === 'searched' || updatingSegment}
+                      loading={updatingSegment}
+                    />
+                    <PrimaryButton
+                      label="Close"
+                      variant="secondary"
+                      onPress={() => setSelectedSegment(null)}
+                    />
+                  </>
+                )}
+              </SafeAreaView>
+            </ThemedView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={confirmMarkSearched}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setConfirmMarkSearched(false)}>
+        <View style={styles.confirmBackdrop}>
+          <ThemedView type="backgroundElement" style={styles.confirmCard}>
+            <View style={[styles.confirmIconBadge, { backgroundColor: theme.primarySoft }]}>
+              <Check color={theme.primary} size={28} />
+            </View>
+            <ThemedText type="subtitle" style={styles.centerText}>
+              Mark area as searched?
+            </ThemedText>
+            <ThemedText themeColor="textSecondary" style={styles.centerText}>
+              This tells the coordinator you&apos;ve fully covered your area. They&apos;ll review and sign it
+              off.
+            </ThemedText>
+            <PrimaryButton
+              label="Yes, mark as searched"
+              onPress={() => handleSetSegmentStatus('searched')}
+              loading={updatingSegment}
+            />
+            <PrimaryButton
+              label="Keep searching"
+              variant="secondary"
+              onPress={() => setConfirmMarkSearched(false)}
+              disabled={updatingSegment}
+            />
           </ThemedView>
         </View>
+      </Modal>
+
+      <Modal
+        visible={areaSearchedSuccess}
+        animationType="slide"
+        onRequestClose={() => setAreaSearchedSuccess(false)}>
+        <ThemedView style={styles.centered}>
+          <SafeAreaView style={styles.successContent}>
+            <View style={[styles.confirmIconBadge, { backgroundColor: theme.successSoft }]}>
+              <Check color={theme.success} size={32} />
+            </View>
+            <ThemedText type="subtitle" style={styles.centerText}>
+              Area searched
+            </ThemedText>
+            <ThemedText themeColor="textSecondary" style={styles.centerText}>
+              Thank you. The coordinator can see your area is covered.
+            </ThemedText>
+
+            <ThemedView type="backgroundSelected" style={styles.spottedRow}>
+              <ThemedText type="small" themeColor="textSecondary">
+                Spotted something here?
+              </ThemedText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setAreaSearchedSuccess(false);
+                  setSelectedSegment(null);
+                  setRemarkFormOpen(true);
+                }}>
+                <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                  Add a report
+                </ThemedText>
+              </Pressable>
+            </ThemedView>
+
+            <PrimaryButton
+              label="Back to search"
+              onPress={() => {
+                setAreaSearchedSuccess(false);
+                setSelectedSegment(null);
+              }}
+            />
+          </SafeAreaView>
+        </ThemedView>
       </Modal>
 
       {token && (
@@ -441,6 +604,16 @@ export default function MapScreen() {
         subjectName={search.subjectName}
         photoUrls={search.photoUrls}
         onClose={() => setPhotoModalOpen(false)}
+      />
+
+      <SubjectDetailsModal
+        visible={detailsOpen}
+        search={search}
+        onClose={() => setDetailsOpen(false)}
+        onOpenPhotos={() => {
+          setDetailsOpen(false);
+          setPhotoModalOpen(true);
+        }}
       />
     </ThemedView>
   );
@@ -476,22 +649,29 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   header: {
-    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    borderRadius: Spacing.two,
+    borderRadius: Radius.pill,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
   headerThumbnail: {
-    width: 28,
-    height: 28,
-    borderRadius: Spacing.one,
+    width: 40,
+    height: 40,
+    borderRadius: Radius.chip,
+  },
+  headerInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  detailsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   legend: {
     alignSelf: 'flex-start',
-    borderRadius: Spacing.two,
+    borderRadius: Radius.chip,
     padding: Spacing.two,
     gap: Spacing.one,
   },
@@ -509,13 +689,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: Spacing.four,
     right: Spacing.three,
-    backgroundColor: '#208AEF',
-    borderRadius: 999,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-  },
-  fabLabel: {
-    color: '#ffffff',
+    width: 56,
+    height: 56,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backdrop: {
     flex: 1,
@@ -523,14 +701,72 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   sheet: {
-    borderTopLeftRadius: Spacing.three,
-    borderTopRightRadius: Spacing.three,
+    borderTopLeftRadius: Radius.sheet,
+    borderTopRightRadius: Radius.sheet,
   },
   sheetContent: {
     padding: Spacing.four,
     gap: Spacing.two,
   },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.35)',
+    marginBottom: Spacing.two,
+  },
+  sheetTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusPill: {
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.half,
+  },
+  confirmBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.four,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: Radius.card,
+    padding: Spacing.five,
+    gap: Spacing.two,
+  },
+  confirmIconBadge: {
+    alignSelf: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.two,
+  },
+  successContent: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.five,
+  },
+  spottedRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: Radius.input,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+    marginTop: Spacing.two,
+    marginBottom: Spacing.one,
+  },
   error: {
-    color: '#e5484d',
+    color: '#B3432B',
   },
 });

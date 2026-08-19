@@ -2,17 +2,22 @@ import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import type { Remark } from '@/lib/api'
 
-const KIND_COLOR: Record<string, string> = {
-  sighting: '#3b82f6',
-  hazard: '#dc2626',
-  note: '#6b7280',
-}
+// Map, not a plain object — `kind` ultimately comes from the backend/other
+// clients and, pre-validation, could be a string like "constructor" or
+// "toString" that resolves to an inherited Object.prototype member on a
+// plain object lookup instead of undefined, silently defeating the `??`
+// fallback below. A Map has no prototype-chain lookups to fall into.
+const KIND_COLOR = new Map<string, string>([
+  ['sighting', '#3b82f6'],
+  ['hazard', '#dc2626'],
+  ['note', '#6b7280'],
+])
 
-const KIND_SYMBOL: Record<string, string> = {
-  sighting: '\u{1F441}', // eye
-  hazard: '⚠', // warning triangle
-  note: '\u{1F4DD}', // memo
-}
+const KIND_SYMBOL = new Map<string, string>([
+  ['sighting', '\u{1F441}'], // eye
+  ['hazard', '⚠'], // warning triangle
+  ['note', '\u{1F4DD}'], // memo
+])
 
 function buildPopupContent(remark: Remark): HTMLDivElement {
   // Built with textContent throughout (never innerHTML/setHTML) — remark
@@ -55,11 +60,11 @@ function buildMarkerElement(remark: Remark): HTMLDivElement {
   el.style.justifyContent = 'center'
   el.style.fontSize = '14px'
   el.style.lineHeight = '1'
-  el.style.backgroundColor = KIND_COLOR[remark.kind] ?? '#6b7280'
+  el.style.backgroundColor = KIND_COLOR.get(remark.kind) ?? '#6b7280'
   el.style.border = '2px solid white'
   el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)'
   el.style.cursor = 'pointer'
-  el.textContent = KIND_SYMBOL[remark.kind] ?? '\u{1F4CD}'
+  el.textContent = KIND_SYMBOL.get(remark.kind) ?? '\u{1F4CD}'
   return el
 }
 
@@ -74,9 +79,23 @@ interface UseRemarkMarkersOptions {
 // SearchDetailPage already places this same way, not a shaded area.
 export function useRemarkMarkers({ map, remarks }: UseRemarkMarkersOptions) {
   const markersRef = useRef(new Map<string, maplibregl.Marker>())
+  const boundMapRef = useRef<maplibregl.Map | null>(null)
 
   useEffect(() => {
     if (!map) return
+
+    // SearchDetailPage unmounts/remounts MapView (and its maplibregl.Map
+    // instance) on a Map -> other-tab -> Map round trip. Markers created
+    // against the old instance are gone along with it, but markersRef
+    // still lists their ids as "already added" — without this reset, the
+    // dedupe check below would skip every remark forever after one tab
+    // switch, silently and permanently hiding all remark pins. The old
+    // markers' elements die with the old map's container, so there's
+    // nothing to explicitly .remove() here — just forget we ever added them.
+    if (boundMapRef.current !== map) {
+      markersRef.current.clear()
+      boundMapRef.current = map
+    }
 
     // Only remarks with a real position render — some volunteer-authored
     // ones won't have one (GPS denied/failed), same as the mobile app.

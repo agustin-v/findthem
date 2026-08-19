@@ -49,9 +49,8 @@ export function useSearchChannel(searchId: string | undefined) {
         channel.on('search_created', () =>
           queryClient.invalidateQueries({ queryKey: ['searches'] }),
         )
-        // No UI reads a 'remarks' query yet (Story 37/#46) — invalidating an
-        // unregistered key is a harmless no-op, and it means that future hook
-        // goes live for free the moment it exists, no channel change needed.
+        // useRemarks (Story 37/#46) reads this key — a coordinator-authored
+        // or volunteer-authored remark anywhere on the search invalidates it.
         channel.on('remark_created', () =>
           queryClient.invalidateQueries({ queryKey: ['remarks', searchId] }),
         )

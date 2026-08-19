@@ -184,11 +184,18 @@ export function SearchDetailPage() {
   // Wire layers: segments + restricted areas. Segment selection is
   // suspended while placing a notice — a tap should place the pin, not
   // also open the segment-assignment popup underneath it.
+  const handleSegmentClick = useCallback((segmentId: number | null) => {
+    // Mutual exclusion with RemarkComposer — both panels render at the
+    // same bottom-right slot, so leaving a pending (unsaved) notice open
+    // while also opening the segment panel would silently stack them.
+    setPendingRemarkLocation(null)
+    setSelectedSegmentId(segmentId)
+  }, [])
   useSegmentLayer({
     map,
     geojson: segments ?? null,
     statusBySegmentId,
-    onSegmentClick: placingRemark ? undefined : setSelectedSegmentId,
+    onSegmentClick: placingRemark ? undefined : handleSegmentClick,
   })
   useRestrictedAreaLayer({ map, geojson: restrictedAreas ?? null })
   useRemarkMarkers({ map, remarks })
@@ -214,6 +221,22 @@ export function SearchDetailPage() {
       canvas.style.cursor = previousCursor
     }
   }, [map, placingRemark])
+
+  // Leaving the Map tab unmounts RemarkComposer, which would silently
+  // discard whatever the coordinator had typed. Rather than let a stale
+  // pendingRemarkLocation quietly reopen a *reset* (text lost) composer on
+  // return, cancel the in-progress notice outright — an explicit restart
+  // is less confusing than a composer that looks unchanged but isn't.
+  // Adjusted during render, not an effect — same "compare against last
+  // rendered value" pattern as the chat read-marker tracking above.
+  const [tabAtLastPlacingCheck, setTabAtLastPlacingCheck] = useState(activeTab)
+  if (activeTab !== tabAtLastPlacingCheck) {
+    setTabAtLastPlacingCheck(activeTab)
+    if (activeTab !== 'map') {
+      setPlacingRemark(false)
+      setPendingRemarkLocation(null)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -288,6 +311,11 @@ export function SearchDetailPage() {
                     className="pointer-events-auto absolute right-4 top-20 gap-1.5"
                     onClick={() => {
                       setSelectedSegmentId(null)
+                      // A composer may already be open (pendingRemarkLocation
+                      // set) — without clearing it here, the next map click
+                      // would silently relocate that in-progress notice
+                      // instead of starting a fresh one.
+                      setPendingRemarkLocation(null)
                       setPlacingRemark(true)
                     }}
                   >
@@ -299,6 +327,10 @@ export function SearchDetailPage() {
                 {pendingRemarkLocation && (
                   <div className="pointer-events-auto absolute bottom-4 right-4 w-72">
                     <RemarkComposer
+                      // Remounts on a location change instead of carrying
+                      // over stale kind/text from whatever was previously
+                      // in progress at a different point.
+                      key={`${pendingRemarkLocation.lat},${pendingRemarkLocation.lng}`}
                       searchId={searchId}
                       location={pendingRemarkLocation}
                       onClose={() => setPendingRemarkLocation(null)}

@@ -3,6 +3,7 @@ import {
   GeoJSONSource,
   Layer,
   Map as MapLibreMap,
+  Marker,
   type PressEventWithFeatures,
 } from '@maplibre/maplibre-react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -12,7 +13,7 @@ import { Check, ChevronRight, MessageCircle, Plus } from 'lucide-react-native';
 import type { Channel } from 'phoenix';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '@/components/primary-button';
@@ -29,6 +30,7 @@ import {
   isAuthError,
   updateSegmentStatus,
   type Message,
+  type Remark,
   type VolunteerGeneration,
   type VolunteerSearchInfo,
   type VolunteerSegment,
@@ -70,6 +72,20 @@ const STATUS_HEADLINES: Record<SegmentStatus, string> = {
   searched: 'Already searched',
 };
 
+// Same kind → color/symbol mapping as apps/ui's useRemarkMarkers.ts — one
+// remark kind reads the same way on both the coordinator's and the
+// volunteer's map.
+const REMARK_KIND_COLOR: Record<string, string> = {
+  sighting: '#3b82f6',
+  hazard: '#dc2626',
+  note: '#6b7280',
+};
+const REMARK_KIND_SYMBOL: Record<string, string> = {
+  sighting: '\u{1F441}', // eye
+  hazard: '⚠', // warning triangle
+  note: '\u{1F4DD}', // memo
+};
+
 type ScreenState = 'loading' | 'ready' | 'retry' | 'expired';
 
 // "MISSING 3h" / "MISSING 2d" next to the area in the context bar — a
@@ -102,6 +118,8 @@ export default function MapScreen() {
   const [generation, setGeneration] = useState<VolunteerGeneration | null>(null);
   const [mySegmentIds, setMySegmentIds] = useState<number[]>([]);
   const [selectedSegment, setSelectedSegment] = useState<VolunteerSegment | null>(null);
+  const [remarks, setRemarks] = useState<Remark[]>([]);
+  const [selectedRemark, setSelectedRemark] = useState<Remark | null>(null);
   const [segmentActionError, setSegmentActionError] = useState<string | null>(null);
   const [updatingSegment, setUpdatingSegment] = useState(false);
   const [confirmMarkSearched, setConfirmMarkSearched] = useState(false);
@@ -160,6 +178,7 @@ export default function MapScreen() {
         setSegments(data.segments);
         setGeneration(data.generation);
         setMySegmentIds(data.mySegmentIds);
+        setRemarks(data.remarks);
         setScreenState('ready');
         loadMessages(storedToken);
       } catch (error) {
@@ -200,6 +219,7 @@ export default function MapScreen() {
         setSegments(data.segments);
         setGeneration(data.generation);
         setMySegmentIds(data.mySegmentIds);
+        setRemarks(data.remarks);
         await loadMessages(token);
       } catch (error) {
         if (isAuthError(error)) {
@@ -232,6 +252,7 @@ export default function MapScreen() {
       setSegments(data.segments);
       setGeneration(data.generation);
       setMySegmentIds(data.mySegmentIds);
+      setRemarks(data.remarks);
     } catch (error) {
       if (isAuthError(error)) {
         await clearVolunteerToken();
@@ -248,9 +269,10 @@ export default function MapScreen() {
   // this only ever runs once the volunteer is already on this screen.
   // Every event just triggers the same refetch the 15s poll above already
   // does — this is a "wake up sooner" layer on top of that poll, not a
-  // replacement for it, so a missed event is harmless. remark_created isn't
-  // wired here yet: nothing on this screen reads remarks until the map-pin
-  // work lands (Story 37).
+  // replacement for it, so a missed event is harmless. remark_created
+  // shares segment_updated's debounce (refreshSegments also fetches
+  // remarks now, Story 37) rather than message_created's faster one — a
+  // map pin isn't as latency-sensitive as a live conversation.
   //
   // Debounced (trailing 2s): refreshSegments is a full GET /volunteer/search
   // — the entire generation's GeoJSON plus freshly-signed photo URLs, not a
@@ -287,6 +309,7 @@ export default function MapScreen() {
         channel.on('segment_updated', debouncedRefresh);
         channel.on('generation_created', debouncedRefresh);
         channel.on('segment_assignment_created', debouncedRefresh);
+        channel.on('remark_created', debouncedRefresh);
         channel.on('message_created', debouncedMessagesRefresh);
         channel
           .join()
@@ -333,6 +356,13 @@ export default function MapScreen() {
         mySegmentIds,
       ),
     [generation, segments, mySegmentIds],
+  );
+
+  // Only remarks with a real position render — some volunteer-authored
+  // ones won't have one (GPS denied/failed).
+  const remarksWithPosition = useMemo(
+    () => remarks.filter((r): r is Remark & { lat: number; lng: number } => r.lat != null && r.lng != null),
+    [remarks],
   );
 
   const handleSegmentPress = useCallback(
@@ -479,6 +509,23 @@ export default function MapScreen() {
               }}
             />
           </GeoJSONSource>
+          {remarksWithPosition.map((remark) => (
+            <Marker
+              key={remark.id}
+              id={remark.id}
+              lngLat={[remark.lng, remark.lat]}
+              onPress={() => setSelectedRemark(remark)}>
+              <View
+                style={[
+                  styles.remarkMarker,
+                  { backgroundColor: REMARK_KIND_COLOR[remark.kind] ?? theme.textSecondary },
+                ]}>
+                <Text style={styles.remarkMarkerSymbol}>
+                  {REMARK_KIND_SYMBOL[remark.kind] ?? '\u{1F4CD}'}
+                </Text>
+              </View>
+            </Marker>
+          ))}
         </MapLibreMap>
       ) : (
         <ThemedView style={[styles.map, styles.centered]}>
@@ -620,6 +667,52 @@ export default function MapScreen() {
                       label="Close"
                       variant="secondary"
                       onPress={() => setSelectedSegment(null)}
+                    />
+                  </>
+                )}
+              </SafeAreaView>
+            </ThemedView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={!!selectedRemark}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSelectedRemark(null)}>
+        <Pressable style={styles.backdrop} onPress={() => setSelectedRemark(null)}>
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            <ThemedView style={styles.sheet}>
+              <SafeAreaView style={styles.sheetContent}>
+                {selectedRemark && (
+                  <>
+                    <View style={styles.sheetHandle} />
+                    <View style={styles.sheetTopRow}>
+                      <ThemedText type="code" themeColor="textSecondary">
+                        {new Date(selectedRemark.reportedAt).toLocaleString()}
+                      </ThemedText>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          { backgroundColor: theme.backgroundSelected },
+                        ]}>
+                        <ThemedText
+                          type="small"
+                          style={{ color: REMARK_KIND_COLOR[selectedRemark.kind] ?? theme.text }}>
+                          {selectedRemark.kind}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    {selectedRemark.text ? (
+                      <ThemedText type="subtitle">{selectedRemark.text}</ThemedText>
+                    ) : (
+                      <ThemedText themeColor="textSecondary">No details added.</ThemedText>
+                    )}
+                    <PrimaryButton
+                      label="Close"
+                      variant="secondary"
+                      onPress={() => setSelectedRemark(null)}
                     />
                   </>
                 )}
@@ -791,6 +884,19 @@ const styles = StyleSheet.create({
   detailsLink: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  remarkMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  remarkMarkerSymbol: {
+    fontSize: 14,
+    lineHeight: 16,
   },
   fab: {
     position: 'absolute',

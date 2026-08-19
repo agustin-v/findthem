@@ -170,6 +170,10 @@ export interface VolunteerSearchData {
   segments: VolunteerSegment[];
   generation: VolunteerGeneration | null;
   mySegmentIds: number[];
+  // Every remark on the search, coordinator- and volunteer-authored alike —
+  // a shared map-annotation board (Story 37), not just this volunteer's
+  // own. map.tsx only renders the ones with a lat/lng.
+  remarks: Remark[];
 }
 
 interface RemoteSegment {
@@ -201,6 +205,7 @@ interface RemoteVolunteerSearchData {
   segments: RemoteSegment[];
   generation: RemoteGeneration | null;
   my_segment_ids: number[];
+  remarks: RemoteRemark[];
 }
 
 function mapVolunteerSegment(segment: RemoteSegment): VolunteerSegment {
@@ -233,6 +238,7 @@ export async function getVolunteerSearch(token: string): Promise<VolunteerSearch
     segments: data.segments.map(mapVolunteerSegment),
     generation: data.generation ? { segments: data.generation.response.segments } : null,
     mySegmentIds: data.my_segment_ids,
+    remarks: data.remarks.map(mapRemark),
   };
 }
 
@@ -286,6 +292,19 @@ interface RemoteRemark {
   reported_at: string;
 }
 
+function mapRemark(remote: RemoteRemark): Remark {
+  return {
+    id: remote.id,
+    searchId: remote.search_id,
+    volunteerId: remote.volunteer_id,
+    kind: remote.kind,
+    text: remote.text,
+    lat: remote.lat,
+    lng: remote.lng,
+    reportedAt: remote.reported_at,
+  };
+}
+
 export async function createRemark(token: string, payload: RemarkPayload): Promise<Remark> {
   const { data } = await request<{ data: RemoteRemark }>('/volunteer/remarks', {
     method: 'POST',
@@ -302,16 +321,7 @@ export async function createRemark(token: string, payload: RemarkPayload): Promi
     }),
   });
 
-  return {
-    id: data.id,
-    searchId: data.search_id,
-    volunteerId: data.volunteer_id,
-    kind: data.kind,
-    text: data.text,
-    lat: data.lat,
-    lng: data.lng,
-    reportedAt: data.reported_at,
-  };
+  return mapRemark(data);
 }
 
 export type MessageSender = 'coordinator' | 'volunteer';

@@ -172,6 +172,18 @@ describe('getVolunteerSearch', () => {
               },
             },
             my_segment_ids: [0],
+            remarks: [
+              {
+                id: 'remark-1',
+                search_id: 'search-1',
+                volunteer_id: null,
+                kind: 'hazard',
+                text: 'Bridge is down',
+                lat: 41.9,
+                lng: 12.5,
+                reported_at: '2026-08-19T10:00:00Z',
+              },
+            ],
           },
         }),
     });
@@ -194,6 +206,20 @@ describe('getVolunteerSearch', () => {
     expect(result.segments).toEqual([{ segmentId: 0, status: 'not_assigned', searchedAt: null }]);
     expect(result.generation?.segments.features).toHaveLength(1);
     expect(result.mySegmentIds).toEqual([0]);
+    // Every remark on the search, not just this volunteer's own (Story 37) —
+    // this one has volunteer_id: null, i.e. coordinator-authored.
+    expect(result.remarks).toEqual([
+      {
+        id: 'remark-1',
+        searchId: 'search-1',
+        volunteerId: null,
+        kind: 'hazard',
+        text: 'Bridge is down',
+        lat: 41.9,
+        lng: 12.5,
+        reportedAt: '2026-08-19T10:00:00Z',
+      },
+    ]);
     const [url, init] = mockFetch.mock.calls[0];
     expect(url).toContain('/volunteer/search');
     expect(init.headers.Authorization).toBe('Bearer the-token');
@@ -221,6 +247,7 @@ describe('getVolunteerSearch', () => {
             segments: [],
             generation: null,
             my_segment_ids: [],
+            remarks: [],
           },
         }),
     });
@@ -229,6 +256,7 @@ describe('getVolunteerSearch', () => {
 
     expect(result.generation).toBeNull();
     expect(result.mySegmentIds).toEqual([]);
+    expect(result.remarks).toEqual([]);
   });
 });
 

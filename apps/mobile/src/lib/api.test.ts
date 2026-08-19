@@ -2,11 +2,13 @@ import {
   ApiError,
   createRemark,
   getJoinPreview,
+  getVolunteerMessages,
   getVolunteerSearch,
   getVolunteerSession,
   isAuthError,
   isNotFoundError,
   joinSearch,
+  sendVolunteerMessage,
   updateSegmentStatus,
 } from './api';
 
@@ -290,6 +292,75 @@ describe('createRemark', () => {
         reported_at: '2026-08-04T10:00:00Z',
       },
     });
+  });
+});
+
+describe('getVolunteerMessages', () => {
+  it('maps the thread and attaches the bearer token', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: 'msg-1',
+              search_id: 'search-1',
+              volunteer_id: 'vol-1',
+              sender: 'coordinator',
+              text: 'Cleared for Zone B-4',
+              inserted_at: '2026-08-01T09:32:00Z',
+            },
+          ],
+        }),
+    });
+
+    const result = await getVolunteerMessages('the-token');
+
+    expect(result).toEqual([
+      {
+        id: 'msg-1',
+        searchId: 'search-1',
+        volunteerId: 'vol-1',
+        sender: 'coordinator',
+        text: 'Cleared for Zone B-4',
+        insertedAt: '2026-08-01T09:32:00Z',
+      },
+    ]);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toContain('/volunteer/messages');
+    expect(init.headers.Authorization).toBe('Bearer the-token');
+  });
+});
+
+describe('sendVolunteerMessage', () => {
+  it('POSTs the client-generated id and text — never a sender', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'msg-2',
+            search_id: 'search-1',
+            volunteer_id: 'vol-1',
+            sender: 'volunteer',
+            text: 'On it. Heading in now.',
+            inserted_at: '2026-08-01T09:33:00Z',
+          },
+        }),
+    });
+
+    const result = await sendVolunteerMessage('the-token', { id: 'msg-2', text: 'On it. Heading in now.' });
+
+    expect(result.sender).toBe('volunteer');
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toContain('/volunteer/messages');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer the-token');
+    const body = JSON.parse(init.body);
+    expect(body).toEqual({ message: { id: 'msg-2', text: 'On it. Heading in now.' } });
+    // sender is never sent from the client — the backend forces it from
+    // the authenticated identity (VolunteerMessageController.create).
+    expect(body.message.sender).toBeUndefined();
   });
 });
 

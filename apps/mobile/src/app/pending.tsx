@@ -10,6 +10,8 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getVolunteerSearch, getVolunteerSession, isAuthError } from '@/lib/api';
+import { resetChatReadState } from '@/lib/chat-read-state';
+import { resetSocket } from '@/lib/socket';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 
 const POLL_INTERVAL_MS = 4000;
@@ -84,6 +86,8 @@ export default function PendingScreen() {
             // a network blip or timeout just retries on the next tick.
             if (pollRef.current) clearInterval(pollRef.current);
             await clearVolunteerToken();
+            resetSocket();
+            resetChatReadState();
             setExpired(true);
           } else {
             setConnectionTrouble(true);
@@ -105,6 +109,8 @@ export default function PendingScreen() {
 
   const handleStartOver = async () => {
     await clearVolunteerToken();
+    resetSocket();
+    resetChatReadState();
     router.replace('/');
   };
 

@@ -313,3 +313,60 @@ export async function createRemark(token: string, payload: RemarkPayload): Promi
     reportedAt: data.reported_at,
   };
 }
+
+export type MessageSender = 'coordinator' | 'volunteer';
+
+export interface Message {
+  id: string;
+  searchId: string;
+  volunteerId: string;
+  sender: MessageSender;
+  text: string;
+  insertedAt: string;
+}
+
+interface RemoteMessage {
+  id: string;
+  search_id: string;
+  volunteer_id: string;
+  sender: MessageSender;
+  text: string;
+  inserted_at: string;
+}
+
+function mapMessage(remote: RemoteMessage): Message {
+  return {
+    id: remote.id,
+    searchId: remote.search_id,
+    volunteerId: remote.volunteer_id,
+    sender: remote.sender,
+    text: remote.text,
+    insertedAt: remote.inserted_at,
+  };
+}
+
+// The volunteer's own 1:1 thread with the coordinator — the backend scopes
+// this to the requesting volunteer's own messages only (Messages.
+// list_by_search_and_volunteer/2), never other volunteers' threads.
+export async function getVolunteerMessages(token: string): Promise<Message[]> {
+  const { data } = await request<{ data: RemoteMessage[] }>('/volunteer/messages', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return data.map(mapMessage);
+}
+
+export interface SendMessagePayload {
+  id: string;
+  text: string;
+}
+
+// sender is never sent from the client — the backend forces it to
+// "volunteer" from the authenticated identity (VolunteerMessageController).
+export async function sendVolunteerMessage(token: string, payload: SendMessagePayload): Promise<Message> {
+  const { data } = await request<{ data: RemoteMessage }>('/volunteer/messages', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ message: { id: payload.id, text: payload.text } }),
+  });
+  return mapMessage(data);
+}

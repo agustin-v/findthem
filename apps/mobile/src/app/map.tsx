@@ -5,11 +5,12 @@ import {
   Map as MapLibreMap,
   type PressEventWithFeatures,
 } from '@maplibre/maplibre-react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
-import { Check, ChevronRight, Plus } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, ChevronRight, MessageCircle, Plus } from 'lucide-react-native';
+import type { Channel } from 'phoenix';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,17 +24,20 @@ import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import {
+  getVolunteerMessages,
   getVolunteerSearch,
   isAuthError,
   updateSegmentStatus,
+  type Message,
   type VolunteerGeneration,
   type VolunteerSearchInfo,
   type VolunteerSegment,
 } from '@/lib/api';
+import { getLastReadAt, resetChatReadState } from '@/lib/chat-read-state';
+import { getSocket, resetSocket } from '@/lib/socket';
 import { getMapStyleUrl, hasApiKey } from '@/lib/tomtom';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 import {
-  SEGMENT_COLORS,
   SEGMENT_FILL_OPACITY,
   SEGMENT_LINE_OPACITY,
   segmentsToGeoJSON,
@@ -64,17 +68,6 @@ const STATUS_HEADLINES: Record<SegmentStatus, string> = {
   assigned: 'Ready to search',
   in_progress: 'Searching now',
   searched: 'Already searched',
-};
-
-// The legend shows one swatch per status — "searched" segments actually
-// decay through several colors over time (see segments.ts's
-// getSegmentColor), but a single representative shade is enough for a
-// compact legend.
-const LEGEND_COLORS: Record<SegmentStatus, string> = {
-  not_assigned: SEGMENT_COLORS.not_assigned,
-  assigned: SEGMENT_COLORS.assigned,
-  in_progress: SEGMENT_COLORS.in_progress,
-  searched: SEGMENT_COLORS.fresh,
 };
 
 type ScreenState = 'loading' | 'ready' | 'retry' | 'expired';
@@ -120,6 +113,22 @@ export default function MapScreen() {
   const [token, setToken] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+  const [messages, setMessages] = useState<Message[]>([]);
+  // Bumped on focus (e.g. returning from /chat, which has just called
+  // markReadUpTo) so unreadCount below recomputes against the latest
+  // getLastReadAt() even when `messages` itself hasn't changed.
+  const [focusTick, setFocusTick] = useState(0);
+
+  const loadMessages = useCallback(async (authToken: string) => {
+    try {
+      const data = await getVolunteerMessages(authToken);
+      setMessages(data);
+    } catch {
+      // Best-effort — the unread badge just misses this cycle; not worth
+      // surfacing an error for a secondary indicator when the primary
+      // search/segments load above already handles auth expiry.
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,10 +150,13 @@ export default function MapScreen() {
         setGeneration(data.generation);
         setMySegmentIds(data.mySegmentIds);
         setScreenState('ready');
+        loadMessages(storedToken);
       } catch (error) {
         if (cancelled) return;
         if (isAuthError(error)) {
           await clearVolunteerToken();
+          resetSocket();
+          resetChatReadState();
           setScreenState('expired');
         } else {
           setScreenState('retry');
@@ -155,7 +167,7 @@ export default function MapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [router, reloadKey]);
+  }, [router, reloadKey, loadMessages]);
 
   // Background refresh so a volunteer sees other volunteers' progress
   // without manually reloading. Silent on transient failures — this is a
@@ -177,9 +189,12 @@ export default function MapScreen() {
         setSegments(data.segments);
         setGeneration(data.generation);
         setMySegmentIds(data.mySegmentIds);
+        await loadMessages(token);
       } catch (error) {
         if (isAuthError(error)) {
           await clearVolunteerToken();
+          resetSocket();
+          resetChatReadState();
           setScreenState('expired');
         }
       } finally {
@@ -188,7 +203,7 @@ export default function MapScreen() {
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [screenState, token]);
+  }, [screenState, token, loadMessages]);
 
   // A lighter-weight alternative to `reload` for callers that only need
   // fresh data (e.g. after posting a remark) — unlike `reload`, this
@@ -209,10 +224,95 @@ export default function MapScreen() {
     } catch (error) {
       if (isAuthError(error)) {
         await clearVolunteerToken();
+        resetSocket();
+        resetChatReadState();
         setScreenState('expired');
       }
     }
   }, [token]);
+
+  // Same FindThemApiWeb.SearchChannel apps/ui subscribes to — joining
+  // requires an already-approved volunteer (UserSocket re-checks status on
+  // connect, same gate VolunteerAuth applies to every HTTP request), so
+  // this only ever runs once the volunteer is already on this screen.
+  // Every event just triggers the same refetch the 15s poll above already
+  // does — this is a "wake up sooner" layer on top of that poll, not a
+  // replacement for it, so a missed event is harmless. remark_created isn't
+  // wired here yet: nothing on this screen reads remarks until the map-pin
+  // work lands (Story 37).
+  //
+  // Debounced (trailing 2s): refreshSegments is a full GET /volunteer/search
+  // — the entire generation's GeoJSON plus freshly-signed photo URLs, not a
+  // small delta — and with N volunteers connected, one volunteer marking one
+  // segment fans out to N of these full fetches. A short quiet window
+  // collapses a burst of marks (a volunteer tapping through several
+  // segments, or several volunteers finishing around the same time) into
+  // one fetch instead of one per event.
+  const debouncedRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedMessagesRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (screenState !== 'ready' || !token || !search?.id) return undefined;
+
+    let channel: Channel | null = null;
+    let cancelled = false;
+
+    const debouncedRefresh = () => {
+      if (debouncedRefreshRef.current) clearTimeout(debouncedRefreshRef.current);
+      debouncedRefreshRef.current = setTimeout(refreshSegments, 2000);
+    };
+    // A shorter window than segment updates above — a coordinator message
+    // is small (one row, not a full generation refetch) and immediacy
+    // matters more for a live conversation than for segment-status churn.
+    const debouncedMessagesRefresh = () => {
+      if (debouncedMessagesRefreshRef.current) clearTimeout(debouncedMessagesRefreshRef.current);
+      debouncedMessagesRefreshRef.current = setTimeout(() => loadMessages(token), 400);
+    };
+
+    getSocket()
+      .then((socket) => {
+        if (cancelled) return;
+
+        channel = socket.channel(`search:${search.id}`, {});
+        channel.on('segment_updated', debouncedRefresh);
+        channel.on('generation_created', debouncedRefresh);
+        channel.on('segment_assignment_created', debouncedRefresh);
+        channel.on('message_created', debouncedMessagesRefresh);
+        channel
+          .join()
+          .receive('error', (reason) => {
+            // Not fatal — every event above just wakes up the existing
+            // 15s poll sooner, so a failed join means "stay on that
+            // cadence", not "this screen is broken".
+            console.warn(`search:${search.id} channel join failed`, reason);
+          });
+      })
+      .catch((error) => {
+        console.warn('Realtime socket unavailable, continuing on REST polling', error);
+      });
+
+    return () => {
+      cancelled = true;
+      channel?.leave();
+      if (debouncedRefreshRef.current) clearTimeout(debouncedRefreshRef.current);
+      if (debouncedMessagesRefreshRef.current) clearTimeout(debouncedMessagesRefreshRef.current);
+    };
+  }, [screenState, token, search?.id, refreshSegments, loadMessages]);
+
+  // Returning from /chat (which just called markReadUpTo) must clear the
+  // badge even though `messages` itself hasn't changed — bump focusTick so
+  // unreadCount below recomputes against the now-current getLastReadAt().
+  useFocusEffect(
+    useCallback(() => {
+      setFocusTick((t) => t + 1);
+      if (token) loadMessages(token);
+    }, [token, loadMessages]),
+  );
+
+  const unreadMessageCount = useMemo(() => {
+    const readUpTo = getLastReadAt();
+    return messages.filter((m) => m.sender === 'coordinator' && m.insertedAt > (readUpTo ?? '')).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, focusTick]);
 
   const geojson = useMemo(
     () =>
@@ -409,25 +509,29 @@ export default function MapScreen() {
           </Pressable>
         </ThemedView>
 
-        <ThemedView style={styles.legend} type="backgroundElement">
-          {(Object.keys(STATUS_LABELS) as SegmentStatus[]).map((status) => (
-            <View key={status} style={styles.legendRow}>
-              <View style={[styles.legendSwatch, { backgroundColor: LEGEND_COLORS[status] }]} />
-              <ThemedText type="small">{STATUS_LABELS[status]}</ThemedText>
-            </View>
-          ))}
-          {mySegmentIds.length > 0 && (
-            <View style={styles.legendRow}>
-              <View
-                style={[
-                  styles.legendSwatch,
-                  { backgroundColor: 'transparent', borderWidth: 2, borderColor: MY_ASSIGNMENT_COLOR },
-                ]}
-              />
-              <ThemedText type="small">Assigned to you</ThemedText>
-            </View>
-          )}
-        </ThemedView>
+        {messages.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              unreadMessageCount > 0 ? `Chat, ${unreadMessageCount} unread` : 'Chat with coordinator'
+            }
+            onPress={() =>
+              router.push({
+                pathname: '/chat',
+                params: { searchId: search.id, contactPhone: search.contactPhone },
+              })
+            }
+            style={[styles.fab, styles.chatFab, { backgroundColor: theme.backgroundElement }]}>
+            <MessageCircle color={theme.text} size={24} />
+            {unreadMessageCount > 0 && (
+              <View style={[styles.unreadBadge, { backgroundColor: theme.primary }]}>
+                <ThemedText type="small" style={styles.unreadBadgeText}>
+                  {unreadMessageCount}
+                </ThemedText>
+              </View>
+            )}
+          </Pressable>
+        )}
 
         <Pressable
           accessibilityRole="button"
@@ -614,6 +718,14 @@ export default function MapScreen() {
           setDetailsOpen(false);
           setPhotoModalOpen(true);
         }}
+        onOpenChat={() => {
+          setDetailsOpen(false);
+          router.push({
+            pathname: '/chat',
+            params: { searchId: search.id, contactPhone: search.contactPhone },
+          });
+        }}
+        unreadMessageCount={unreadMessageCount}
       />
     </ThemedView>
   );
@@ -669,22 +781,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  legend: {
-    alignSelf: 'flex-start',
-    borderRadius: Radius.chip,
-    padding: Spacing.two,
-    gap: Spacing.one,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  legendSwatch: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-  },
   fab: {
     position: 'absolute',
     bottom: Spacing.four,
@@ -694,6 +790,27 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  chatFab: {
+    bottom: Spacing.four + 56 + Spacing.two,
+    width: 48,
+    height: 48,
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    lineHeight: 14,
   },
   backdrop: {
     flex: 1,

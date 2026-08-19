@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { Phone } from 'lucide-react-native';
+import { MessageCircle, Phone } from 'lucide-react-native';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,6 +15,8 @@ interface SubjectDetailsModalProps {
   search: VolunteerSearchInfo;
   onClose: () => void;
   onOpenPhotos: () => void;
+  onOpenChat: () => void;
+  unreadMessageCount: number;
 }
 
 // subject_details is a free-form JSON map on the backend (its shape
@@ -62,7 +64,14 @@ function formatElapsed(iso: string | null): string | null {
   return `${Math.floor(hours / 24)}d`;
 }
 
-export function SubjectDetailsModal({ visible, search, onClose, onOpenPhotos }: SubjectDetailsModalProps) {
+export function SubjectDetailsModal({
+  visible,
+  search,
+  onClose,
+  onOpenPhotos,
+  onOpenChat,
+  unreadMessageCount,
+}: SubjectDetailsModalProps) {
   const theme = useTheme();
   const details = search.subjectDetails;
   const elapsed = formatElapsed(search.lkpAt);
@@ -161,15 +170,30 @@ export function SubjectDetailsModal({ visible, search, onClose, onOpenPhotos }: 
                     type="backgroundElement"
                     style={[styles.card, styles.coordinatorRow, { borderColor: theme.border }]}>
                     <ThemedText themeColor="textSecondary">Contact for this search</ThemedText>
-                    <Pressable
-                      accessibilityRole="button"
-                      style={[styles.callButton, { backgroundColor: theme.primary }]}
-                      onPress={() => Linking.openURL(`tel:${search.contactPhone}`)}>
-                      <Phone color={theme.primaryText} size={16} />
-                      <ThemedText type="smallBold" style={{ color: theme.primaryText }}>
-                        Call
-                      </ThemedText>
-                    </Pressable>
+                    <View style={styles.coordinatorActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          unreadMessageCount > 0 ? `Chat, ${unreadMessageCount} unread` : 'Chat'
+                        }
+                        style={[styles.iconButton, { backgroundColor: theme.primarySoft }]}
+                        onPress={onOpenChat}>
+                        <MessageCircle color={theme.primary} size={18} />
+                        {unreadMessageCount > 0 && (
+                          <View style={[styles.iconButtonBadge, { backgroundColor: theme.primary }]}>
+                            <ThemedText type="small" style={styles.iconButtonBadgeText}>
+                              {unreadMessageCount}
+                            </ThemedText>
+                          </View>
+                        )}
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        style={[styles.iconButton, { backgroundColor: theme.primarySoft }]}
+                        onPress={() => Linking.openURL(`tel:${search.contactPhone}`)}>
+                        <Phone color={theme.primary} size={18} />
+                      </Pressable>
+                    </View>
                   </ThemedView>
                 </>
               )}
@@ -262,12 +286,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
   },
-  callButton: {
+  coordinatorActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.one,
+    gap: Spacing.two,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
     borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconButtonBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  iconButtonBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    lineHeight: 12,
   },
 });

@@ -10,6 +10,8 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getVolunteerSession, isAuthError } from '@/lib/api';
+import { resetChatReadState } from '@/lib/chat-read-state';
+import { resetSocket } from '@/lib/socket';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 
 type ResumeState = 'checking' | 'retry' | 'ready';
@@ -48,12 +50,16 @@ export default function JoinEntryScreen() {
           router.replace('/pending');
         } else {
           await clearVolunteerToken();
+          resetSocket();
+          resetChatReadState();
           setResumeState('ready');
         }
       } catch (error) {
         if (cancelled) return;
         if (isAuthError(error)) {
           await clearVolunteerToken();
+          resetSocket();
+          resetChatReadState();
           setResumeState('ready');
         } else {
           setResumeState('retry');

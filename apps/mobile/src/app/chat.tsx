@@ -13,8 +13,9 @@ import {
   StyleSheet,
   TextInput,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '@/components/primary-button';
 import { ThemedText } from '@/components/themed-text';
@@ -34,6 +35,14 @@ import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 
 const POLL_INTERVAL_MS = 15000;
 const REFRESH_DEBOUNCE_MS = 400;
+// contactPhone arrives as a router param, not straight from a trusted
+// server response in this screen's own fetch — a crafted deep link
+// (findthem://chat?contactPhone=...) could otherwise put an arbitrary
+// string behind a "Call coordinator" affordance. tel: scheme injection
+// itself isn't possible (RN parses everything before the first ':' as the
+// scheme, and Linking.openURL uses ACTION_VIEW, not auto-dialing), but an
+// unvalidated value could still read as a plausible-looking wrong number.
+const PHONE_PATTERN = /^\+?[0-9\s\-()]{3,20}$/;
 
 type ScreenState = 'loading' | 'ready' | 'error';
 
@@ -61,25 +70,54 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const insets = useSafeAreaInsets();
+  // Set on the explicit back button AND on unmount (see the cleanup effect
+  // below) — a real routed screen unmounts on a swipe-back/hardware-back
+  // gesture too, not just the header button, and an in-flight send's
+  // success/catch/finally must not write state after that.
   const cancelledRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
+  // A client-generated id is only replay-safe (Messages.create_message's
+  // on_conflict: :nothing dedupes on it) if the SAME id is reused across
+  // retries of the *same* draft — tracks both so a retry of unchanged text
+  // reuses the id, but abandoning a failed send and typing something new
+  // mints a fresh one instead of misattaching it to different text.
+  const pendingSendRef = useRef<{ id: string; text: string } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
 
   const handleAuthExpired = useCallback(async () => {
     await clearVolunteerToken();
     resetSocket();
     resetChatReadState();
+    // dismissAll() first so a dead-token map.tsx isn't left one back-swipe
+    // away — replace() alone only swaps the top of the stack.
+    router.dismissAll();
     router.replace('/');
   }, [router]);
 
+  // seqRef, not just an in-flight flag — this fires from four independent
+  // triggers (mount, 15s poll, socket debounce, and a retry button), and
+  // an older response resolving after a newer one must not win and revert
+  // the thread to stale data.
+  const loadMessagesSeqRef = useRef(0);
   const loadMessages = useCallback(
     async (authToken: string) => {
+      const seq = ++loadMessagesSeqRef.current;
       try {
         const data = await getVolunteerMessages(authToken);
+        if (seq !== loadMessagesSeqRef.current) return;
         setMessages(data);
         setScreenState('ready');
         const lastCoordinatorMessage = [...data].reverse().find((m) => m.sender === 'coordinator');
         if (lastCoordinatorMessage) markReadUpTo(lastCoordinatorMessage.insertedAt);
       } catch (error) {
+        if (seq !== loadMessagesSeqRef.current) return;
         if (isAuthError(error)) {
           await handleAuthExpired();
         } else {
@@ -167,34 +205,63 @@ export default function ChatScreen() {
     setSending(true);
     setSendError(null);
     setDraft('');
+    // Reused only if this is a retry of the exact same text that just
+    // failed — a timed-out-but-actually-succeeded send followed by a
+    // manual retry of the same draft must replay the same id (server-side
+    // on_conflict: :nothing makes that a safe no-op) rather than mint a
+    // fresh one and double-post. Abandoning a failed send and typing
+    // something new correctly gets its own fresh id instead.
+    const id = pendingSendRef.current?.text === text ? pendingSendRef.current.id : Crypto.randomUUID();
+    pendingSendRef.current = { id, text };
 
     try {
-      const sent = await sendVolunteerMessage(token, { id: Crypto.randomUUID(), text });
+      const sent = await sendVolunteerMessage(token, { id, text });
+      pendingSendRef.current = null;
       if (cancelledRef.current) return;
-      setMessages((prev) => [...prev, sent]);
+      // The message_created socket push can independently trigger a
+      // loadMessages() that already includes this message before this
+      // POST's own response comes back — append only if it isn't there yet.
+      setMessages((prev) => (prev.some((m) => m.id === sent.id) ? prev : [...prev, sent]));
     } catch (error) {
-      if (cancelledRef.current) return;
-      // Restored (not lost) so a failed send doesn't destroy text the
-      // volunteer can't easily retype from memory in the field.
-      setDraft(text);
       if (isAuthError(error)) {
+        // Checked before the cancelled guard below — a removed volunteer
+        // must still be signed out even if they tapped back while the
+        // send was in flight.
+        pendingSendRef.current = null;
         await handleAuthExpired();
-      } else {
-        setSendError(
-          error instanceof ApiError
-            ? 'Could not send. Please try again.'
-            : 'Something went wrong. Please check your connection and try again.',
-        );
+        return;
       }
+      if (cancelledRef.current) return;
+      // Restored only if nothing newer was typed in the meantime — don't
+      // clobber text the volunteer already moved on to composing.
+      setDraft((current) => (current ? current : text));
+      setSendError(
+        error instanceof ApiError
+          ? 'Could not send. Please try again.'
+          : 'Something went wrong. Please check your connection and try again.',
+      );
     } finally {
       if (!cancelledRef.current) setSending(false);
     }
   };
 
+  const validContactPhone = contactPhone && PHONE_PATTERN.test(contactPhone) ? contactPhone : null;
+
+  const handleHeaderLayout = (e: LayoutChangeEvent) => {
+    setHeaderHeight(e.nativeEvent.layout.height);
+  };
+
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+      {/* Only the top edge — a bottom edge here would double-count the
+          home-indicator inset against KeyboardAvoidingView's own padding
+          behavior below, leaving a gap between the composer and the
+          keyboard. The composer applies insets.bottom itself instead, so
+          spacing is still correct with the keyboard dismissed. */}
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View
+          style={[styles.header, { borderBottomColor: theme.border }]}
+          onLayout={handleHeaderLayout}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Back"
@@ -216,12 +283,12 @@ export default function ChatScreen() {
               This search
             </ThemedText>
           </View>
-          {contactPhone && (
+          {validContactPhone && (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Call coordinator"
               style={[styles.callButton, { backgroundColor: theme.primarySoft }]}
-              onPress={() => Linking.openURL(`tel:${contactPhone}`)}>
+              onPress={() => Linking.openURL(`tel:${validContactPhone}`)}>
               <Phone color={theme.primary} size={18} />
             </Pressable>
           )}
@@ -242,7 +309,7 @@ export default function ChatScreen() {
           <KeyboardAvoidingView
             style={styles.flex}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+            keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}>
             <ScrollView ref={scrollRef} contentContainerStyle={styles.messageList}>
               {messages.length === 0 ? (
                 <ThemedText themeColor="textSecondary" style={styles.centerText}>
@@ -289,7 +356,16 @@ export default function ChatScreen() {
               )}
             </ScrollView>
 
-            <View style={[styles.composer, { borderTopColor: theme.border }]}>
+            {sendError && (
+              <ThemedText type="small" style={styles.error}>
+                {sendError}
+              </ThemedText>
+            )}
+            <View
+              style={[
+                styles.composer,
+                { borderTopColor: theme.border, paddingBottom: Spacing.three + insets.bottom },
+              ]}>
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
@@ -316,11 +392,6 @@ export default function ChatScreen() {
                 )}
               </Pressable>
             </View>
-            {sendError && (
-              <ThemedText type="small" style={styles.error}>
-                {sendError}
-              </ThemedText>
-            )}
           </KeyboardAvoidingView>
         )}
       </SafeAreaView>

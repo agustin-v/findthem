@@ -17,6 +17,8 @@ import {
   type JoinPreview,
   type ResourceType,
 } from '@/lib/api';
+import { resetChatReadState } from '@/lib/chat-read-state';
+import { resetSocket } from '@/lib/socket';
 import { saveVolunteerToken } from '@/lib/token';
 
 const RESOURCE_TYPES: { value: ResourceType; label: string }[] = [
@@ -94,6 +96,14 @@ export default function JoinConsentScreen() {
         consentPhone,
       });
       await saveVolunteerToken(result.token);
+      // This is the one site that *writes* a new identity rather than
+      // clearing one — easy to miss since every other reset/reset pairing
+      // in this app sits next to a clearVolunteerToken() call instead. A
+      // device re-joining as a different volunteer (e.g. a shared/passed-
+      // around phone) without this would keep the previous volunteer's
+      // socket connection and unread-message read marker.
+      resetSocket();
+      resetChatReadState();
       router.replace('/pending');
     } catch (error) {
       setSubmitError(

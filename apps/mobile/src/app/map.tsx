@@ -33,7 +33,7 @@ import {
   type VolunteerSearchInfo,
   type VolunteerSegment,
 } from '@/lib/api';
-import { getLastReadAt, resetChatReadState } from '@/lib/chat-read-state';
+import { getLastReadAt, hydrateChatReadState, resetChatReadState } from '@/lib/chat-read-state';
 import { getSocket, resetSocket } from '@/lib/socket';
 import { getMapStyleUrl, hasApiKey } from '@/lib/tomtom';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
@@ -119,9 +119,17 @@ export default function MapScreen() {
   // getLastReadAt() even when `messages` itself hasn't changed.
   const [focusTick, setFocusTick] = useState(0);
 
+  // Called from the mount effect, the 15s poll, the socket debounce, and
+  // useFocusEffect below — up to four independent triggers that can have
+  // requests in flight at once. A sequence number, not just an in-flight
+  // flag, so an older response that resolves after a newer one can't win
+  // and revert the list to stale data.
+  const loadMessagesSeqRef = useRef(0);
   const loadMessages = useCallback(async (authToken: string) => {
+    const seq = ++loadMessagesSeqRef.current;
     try {
       const data = await getVolunteerMessages(authToken);
+      if (seq !== loadMessagesSeqRef.current) return;
       setMessages(data);
     } catch {
       // Best-effort — the unread badge just misses this cycle; not worth
@@ -135,7 +143,10 @@ export default function MapScreen() {
 
     (async () => {
       setScreenState('loading');
-      const storedToken = await getVolunteerToken();
+      // Awaited before the unread badge can matter — otherwise a cold
+      // start briefly reports the whole thread as unread while the
+      // persisted read marker is still loading from disk.
+      const [storedToken] = await Promise.all([getVolunteerToken(), hydrateChatReadState()]);
       if (!storedToken) {
         router.replace('/');
         return;

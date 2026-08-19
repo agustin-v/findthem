@@ -5,6 +5,12 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000'
 const SOCKET_URL = API_URL.replace(/^http/, 'ws') + '/socket'
 
 let socketPromise: Promise<Socket> | null = null
+// Bumped by resetSocket() so a getSocket() call already waiting on the
+// (async) getAuthToken() can tell, once that resolves, that it's now
+// stale — without this, a reset landing mid-fetch still lets the old
+// attempt construct and connect() a Socket with the invalidated token
+// that nothing holds a reference to and nothing will ever disconnect.
+let generation = 0
 
 // One socket for the whole app, connected lazily on first channel join and
 // left open across page navigation — reconnecting per search-detail visit
@@ -32,15 +38,21 @@ let socketPromise: Promise<Socket> | null = null
 // that — ClerkAuthBridge calls it on every isSignedIn transition.
 export async function getSocket(): Promise<Socket> {
   if (!socketPromise) {
+    const myGeneration = generation
     socketPromise = getAuthToken()
       .then((token) => {
+        if (myGeneration !== generation) {
+          throw new Error('socket generation superseded by resetSocket()')
+        }
         const socket = new Socket(SOCKET_URL, { params: { token } })
         socket.connect()
         return socket
       })
       .catch((error) => {
-        // Let the next caller try again instead of caching a rejected promise forever.
-        socketPromise = null
+        // Let the next caller try again instead of caching a rejected
+        // promise forever — but only if nothing has reset in the
+        // meantime (a reset already cleared socketPromise itself).
+        if (myGeneration === generation) socketPromise = null
         throw error
       })
   }
@@ -51,6 +63,7 @@ export async function getSocket(): Promise<Socket> {
 // Tears down the current socket (if any) and clears the cache, so the next
 // getSocket() call re-fetches a fresh token and reconnects from scratch.
 export function resetSocket(): void {
+  generation += 1
   socketPromise?.then((socket) => socket.disconnect()).catch(() => {})
   socketPromise = null
 }

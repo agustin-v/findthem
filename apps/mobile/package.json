@@ -25,6 +25,7 @@
     "expo-system-ui": "~57.0.2",
     "expo-web-browser": "~57.0.2",
     "lucide-react-native": "^1.31.0",
+    "phoenix": "^1.8.11",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",
+    "@types/phoenix": "^1.6.7",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.1",

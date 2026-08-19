@@ -29,7 +29,10 @@ defmodule FindThemApiWeb.GenerationController do
     end
   end
 
-  defp generation_data(generation) do
+  # Public so FindThemApiWeb.SearchChannel can shape a broadcasted
+  # %Generation{} struct the same way, instead of pushing it raw (which
+  # won't JSON-encode).
+  def generation_data(generation) do
     %{
       id: generation.id,
       meta: generation.meta,

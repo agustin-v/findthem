@@ -2,14 +2,16 @@ defmodule FindThemApiWeb.SearchJSON do
   alias FindThemApi.{Photos, Searches}
 
   def index(%{searches: searches}) do
-    %{data: Enum.map(searches, &data/1)}
+    %{data: Enum.map(searches, &search_data/1)}
   end
 
   def show(%{search: search}) do
-    %{data: data(search)}
+    %{data: search_data(search)}
   end
 
-  defp data(search) do
+  # Public so FindThemApiWeb.SearchChannel can shape a broadcasted %Search{}
+  # struct the same way, instead of pushing it raw (which won't JSON-encode).
+  def search_data(search) do
     aggregates = Searches.aggregates_for(search)
 
     %{

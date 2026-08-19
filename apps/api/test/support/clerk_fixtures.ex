@@ -34,6 +34,16 @@ defmodule FindThemApi.ClerkFixtures do
   returns `conn` with a valid Bearer token for `sub` attached.
   """
   def authed_conn(conn, sub, opts \\ []) do
+    token = authed_token(sub, opts)
+    Plug.Conn.put_req_header(conn, "authorization", "Bearer #{token}")
+  end
+
+  @doc """
+  Same Bypass-served JWKS + Clerk config as `authed_conn/3`, but returns the
+  raw token string — for callers with no conn to attach it to (e.g. socket
+  connect params in channel tests).
+  """
+  def authed_token(sub, opts \\ []) do
     bypass = Bypass.open()
     issuer = "http://localhost:#{bypass.port}"
     previous = Application.get_env(:findthem_api, :clerk)
@@ -49,16 +59,13 @@ defmodule FindThemApi.ClerkFixtures do
     keypair = rsa_keypair("test-kid-1")
     serve_jwks(bypass, [keypair.public_jwks_entry])
 
-    token =
-      sign_token(keypair.private, keypair.kid, %{
-        "sub" => sub,
-        "iss" => issuer,
-        "azp" => List.first(authorized_parties),
-        "iat" => now(),
-        "nbf" => now(),
-        "exp" => now() + 3600
-      })
-
-    Plug.Conn.put_req_header(conn, "authorization", "Bearer #{token}")
+    sign_token(keypair.private, keypair.kid, %{
+      "sub" => sub,
+      "iss" => issuer,
+      "azp" => List.first(authorized_parties),
+      "iat" => now(),
+      "nbf" => now(),
+      "exp" => now() + 3600
+    })
   end
 end

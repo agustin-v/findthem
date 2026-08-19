@@ -48,6 +48,14 @@ cors_origins =
 
 config :findthem_api, :cors_origins, cors_origins
 
+# Same allowlist gates the websocket upgrade (UserSocket, mounted at
+# /socket) as gates plain HTTP CORS — Phoenix's check_origin accepts the
+# identical shape (strings/regexes) cors_origins is already built from.
+# Left unset, check_origin defaults to matching the endpoint's own :url
+# host only, which would reject the coordinator UI's real origin the
+# moment it's deployed anywhere other than the same host as the API.
+config :findthem_api, FindThemApiWeb.Endpoint, check_origin: cors_origins
+
 # Clerk issuer + JWKS URL aren't secret (they're embedded in every session JWT / the
 # publishable key); dev defaults point at the FindThem dev Clerk instance.
 config :findthem_api, :clerk,

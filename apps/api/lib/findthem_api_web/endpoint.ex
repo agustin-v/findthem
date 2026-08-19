@@ -15,6 +15,14 @@ defmodule FindThemApiWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # Coordinator + volunteer realtime channel (search:<id>) — see UserSocket
+  # for the dual-auth story. No longpoll: web/mobile clients both speak
+  # websocket natively, and a silent long-poll fallback would hide a
+  # connectivity problem worth surfacing instead.
+  socket "/socket", FindThemApiWeb.UserSocket,
+    websocket: true,
+    longpoll: false
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),

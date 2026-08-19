@@ -1,17 +1,19 @@
 defmodule FindThemApiWeb.SearchVolunteerJSON do
   def index(%{volunteers: volunteers}) do
-    %{data: Enum.map(volunteers, &data/1)}
+    %{data: Enum.map(volunteers, &volunteer_data/1)}
   end
 
   def show(%{volunteer: volunteer}) do
-    %{data: data(volunteer)}
+    %{data: volunteer_data(volunteer)}
   end
 
-  defp data({%FindThemApi.Volunteers.Volunteer{} = volunteer, segments_searched}) do
+  # Public so FindThemApiWeb.SearchChannel can shape a broadcasted %Volunteer{}
+  # struct the same way, instead of pushing it raw (which won't JSON-encode).
+  def volunteer_data({%FindThemApi.Volunteers.Volunteer{} = volunteer, segments_searched}) do
     volunteer |> base() |> Map.put(:segments_searched, segments_searched)
   end
 
-  defp data(%FindThemApi.Volunteers.Volunteer{} = volunteer) do
+  def volunteer_data(%FindThemApi.Volunteers.Volunteer{} = volunteer) do
     volunteer |> base() |> Map.put(:segments_searched, nil)
   end
 

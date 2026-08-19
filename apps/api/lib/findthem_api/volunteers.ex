@@ -113,6 +113,7 @@ defmodule FindThemApi.Volunteers do
     |> Volunteer.changeset(attrs)
     |> Repo.update()
     |> broadcast(volunteer.search_id, :volunteer_updated)
+    |> disconnect_if_removed()
   end
 
   defp broadcast({:ok, %Volunteer{} = volunteer} = result, search_id, event) do
@@ -121,4 +122,19 @@ defmodule FindThemApi.Volunteers do
   end
 
   defp broadcast(error, _search_id, _event), do: error
+
+  # A removed volunteer's HTTP requests are cut off on their very next
+  # request (VolunteerAuth re-checks status against the DB every time) —
+  # but a channel has no "next request": once joined, nothing re-checks
+  # authorization again. Force-closing the socket here closes that gap
+  # instead of leaving it open until the socket happens to drop on its
+  # own. `"volunteer_socket:#{id}"` is UserSocket's own `id/1` — Phoenix's
+  # documented mechanism for this is broadcasting "disconnect" on that
+  # topic, which every socket for this identity is already subscribed to.
+  defp disconnect_if_removed({:ok, %Volunteer{status: "removed"} = volunteer} = result) do
+    FindThemApiWeb.Endpoint.broadcast("volunteer_socket:#{volunteer.id}", "disconnect", %{})
+    result
+  end
+
+  defp disconnect_if_removed(result), do: result
 end

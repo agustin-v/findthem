@@ -12,6 +12,12 @@ export function useSearch(id: string) {
   return useQuery({
     queryKey: ['searches', id],
     queryFn: () => api.searches.getById(id),
+    // The other three search-detail queries all have a poll fallback (see
+    // useVolunteers/useSegments/useSegmentAssignments below) so the
+    // realtime channel degrading to "quietly falls back to polling" is
+    // actually true for them — this one needs the same fallback to make
+    // that claim true here too.
+    refetchInterval: 30_000,
   })
 }
 

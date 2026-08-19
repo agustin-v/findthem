@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, type CreateSearchInput } from '@/lib/api'
+import { api, type CreateSearchInput, type RemarkKind } from '@/lib/api'
 
 export function useSearches() {
   return useQuery({
@@ -86,6 +86,27 @@ export function useSendMessage(searchId: string) {
       api.messages.send(searchId, volunteerId, text),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', searchId] })
+    },
+  })
+}
+
+export function useRemarks(searchId: string) {
+  return useQuery({
+    queryKey: ['remarks', searchId],
+    queryFn: () => api.remarks.listBySearch(searchId),
+    // remark_created already invalidates this exact key (useSearchChannel.ts)
+    // — the poll is just a fallback for a missed/dropped realtime event.
+    refetchInterval: 30_000,
+  })
+}
+
+export function useCreateRemark(searchId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { kind: RemarkKind; text?: string; lat: number; lng: number }) =>
+      api.remarks.create(searchId, params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['remarks', searchId] })
     },
   })
 }

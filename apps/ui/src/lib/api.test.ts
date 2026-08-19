@@ -453,3 +453,89 @@ describe('api.messages.send', () => {
     expect(id1).not.toBe(id2)
   })
 })
+
+describe('api.remarks.listBySearch', () => {
+  it('maps remote snake_case remarks to the UI shape', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: 'remark-1',
+              search_id: 'search-1',
+              volunteer_id: null,
+              kind: 'hazard',
+              text: 'Bridge is down',
+              lat: 41.9,
+              lng: 12.5,
+              reported_at: '2026-08-19T10:00:00Z',
+              inserted_at: '2026-08-19T10:00:00Z',
+            },
+          ],
+        }),
+    })
+
+    const result = await api.remarks.listBySearch('search-1')
+
+    expect(result).toEqual([
+      {
+        id: 'remark-1',
+        searchId: 'search-1',
+        volunteerId: null,
+        kind: 'hazard',
+        text: 'Bridge is down',
+        lat: 41.9,
+        lng: 12.5,
+        reportedAt: '2026-08-19T10:00:00Z',
+        insertedAt: '2026-08-19T10:00:00Z',
+      },
+    ])
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/remarks')
+  })
+})
+
+describe('api.remarks.create', () => {
+  it('POSTs a client-generated id and the required lat/lng', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'remark-2',
+            search_id: 'search-1',
+            volunteer_id: null,
+            kind: 'hazard',
+            text: 'Bridge is down',
+            lat: 41.9,
+            lng: 12.5,
+            reported_at: '2026-08-19T10:00:00Z',
+            inserted_at: '2026-08-19T10:00:00Z',
+          },
+        }),
+    })
+
+    const result = await api.remarks.create('search-1', {
+      kind: 'hazard',
+      text: 'Bridge is down',
+      lat: 41.9,
+      lng: 12.5,
+    })
+
+    expect(result.kind).toBe('hazard')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/remarks')
+    expect(init.method).toBe('POST')
+    const body = JSON.parse(init.body)
+    expect(body.remark.kind).toBe('hazard')
+    expect(body.remark.text).toBe('Bridge is down')
+    expect(body.remark.lat).toBe(41.9)
+    expect(body.remark.lng).toBe(12.5)
+    expect(typeof body.remark.id).toBe('string')
+    expect(body.remark.id.length).toBeGreaterThan(0)
+    expect(typeof body.remark.reported_at).toBe('string')
+  })
+})

@@ -115,6 +115,20 @@
       "assign": "Assign",
       "unassign": "Remove",
       "actionFailed": "Something went wrong. Please try again."
+    },
+    "remarks": {
+      "postNotice": "Post a notice",
+      "tapToPlace": "Tap the map to place your notice",
+      "composerTitle": "New notice",
+      "textPlaceholder": "What should volunteers know?",
+      "cancel": "Cancel",
+      "post": "Post",
+      "postFailed": "Couldn't post this notice. Please try again.",
+      "kind": {
+        "sighting": "Sighting",
+        "hazard": "Hazard",
+        "note": "Note"
+      }
     }
   }
 }

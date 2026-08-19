@@ -115,6 +115,20 @@
       "assign": "Assegna",
       "unassign": "Rimuovi",
       "actionFailed": "Qualcosa è andato storto. Riprova."
+    },
+    "remarks": {
+      "postNotice": "Pubblica un avviso",
+      "tapToPlace": "Tocca la mappa per posizionare l'avviso",
+      "composerTitle": "Nuovo avviso",
+      "textPlaceholder": "Cosa devono sapere i volontari?",
+      "cancel": "Annulla",
+      "post": "Pubblica",
+      "postFailed": "Impossibile pubblicare l'avviso. Riprova.",
+      "kind": {
+        "sighting": "Avvistamento",
+        "hazard": "Pericolo",
+        "note": "Nota"
+      }
     }
   }
 }

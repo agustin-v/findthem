@@ -81,6 +81,20 @@ export interface Message {
   insertedAt: string
 }
 
+export type RemarkKind = 'sighting' | 'hazard' | 'note'
+
+export interface Remark {
+  id: string
+  searchId: string
+  volunteerId: string | null
+  kind: string
+  text: string | null
+  lat: number | null
+  lng: number | null
+  reportedAt: string
+  insertedAt: string
+}
+
 export interface CreateSearchInput {
   subjectType: 'person' | 'animal' | 'object'
   [key: string]: unknown
@@ -143,6 +157,18 @@ interface RemoteMessage {
   inserted_at: string
 }
 
+interface RemoteRemark {
+  id: string
+  search_id: string
+  volunteer_id: string | null
+  kind: string
+  text: string | null
+  lat: number | null
+  lng: number | null
+  reported_at: string
+  inserted_at: string
+}
+
 export interface JoinPreview {
   subjectType: 'person' | 'animal' | 'object'
   subjectName: string
@@ -177,6 +203,20 @@ function mapMessage(remote: RemoteMessage): Message {
     volunteerId: remote.volunteer_id,
     sender: remote.sender,
     text: remote.text,
+    insertedAt: remote.inserted_at,
+  }
+}
+
+function mapRemark(remote: RemoteRemark): Remark {
+  return {
+    id: remote.id,
+    searchId: remote.search_id,
+    volunteerId: remote.volunteer_id,
+    kind: remote.kind,
+    text: remote.text,
+    lat: remote.lat,
+    lng: remote.lng,
+    reportedAt: remote.reported_at,
     insertedAt: remote.inserted_at,
   }
 }
@@ -368,6 +408,37 @@ export const api = {
         { message: { id: crypto.randomUUID(), volunteer_id: volunteerId, text } },
       )
       return mapMessage(data)
+    },
+  },
+  remarks: {
+    listBySearch: async (searchId: string): Promise<Remark[]> => {
+      const { data } = await apiClient.get<{ data: RemoteRemark[] }>(
+        `/api/searches/${searchId}/remarks`,
+      )
+      return data.map(mapRemark)
+    },
+    // Coordinator-authored map notices always carry lat/lng (the backend
+    // requires it on this path specifically — a notice with no position
+    // doesn't make sense to create) — unlike the volunteer-authored path,
+    // which allows a missing position when GPS was denied/failed.
+    create: async (
+      searchId: string,
+      params: { kind: RemarkKind; text?: string; lat: number; lng: number },
+    ): Promise<Remark> => {
+      const { data } = await apiClient.post<{ data: RemoteRemark }>(
+        `/api/searches/${searchId}/remarks`,
+        {
+          remark: {
+            id: crypto.randomUUID(),
+            kind: params.kind,
+            text: params.text,
+            lat: params.lat,
+            lng: params.lng,
+            reported_at: new Date().toISOString(),
+          },
+        },
+      )
+      return mapRemark(data)
     },
   },
   photos: {

@@ -1,5 +1,6 @@
 import { useParams } from '@tanstack/react-router'
 import maplibregl from 'maplibre-gl'
+import { MapPinPlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,15 +12,18 @@ import { SearchOverviewDock } from '@/components/search-detail/SearchOverviewDoc
 import { VolunteerTable } from '@/components/search-detail/VolunteerTable'
 import { SegmentAssignmentPanel } from '@/components/search-detail/SegmentAssignmentPanel'
 import { ChatPanel } from '@/components/search-detail/ChatPanel'
+import { RemarkComposer } from '@/components/search-detail/RemarkComposer'
 import {
   useSearch,
   useVolunteers,
   useSegments,
   useSegmentAssignments,
   useMessages,
+  useRemarks,
 } from '@/hooks/useSearches'
 import { useSegmentLayer } from '@/hooks/useSegmentLayer'
 import { useRestrictedAreaLayer } from '@/hooks/useRestrictedAreaLayer'
+import { useRemarkMarkers } from '@/hooks/useRemarkMarkers'
 import { useGenerateSegments } from '@/hooks/useGenerateSegments'
 import { useSearchChannel } from '@/hooks/useSearchChannel'
 import { useGeoSegmentsStore } from '@/stores/useGeoSegmentsStore'
@@ -59,6 +63,7 @@ export function SearchDetailPage() {
     isPending: isMessagesPending,
     isError: isMessagesError,
   } = useMessages(searchId)
+  const { data: remarks = [] } = useRemarks(searchId)
   const photoUploadFailure = usePhotoUploadStore((s) => s.failuresBySearch[searchId])
   const clearPhotoUploadFailure = usePhotoUploadStore((s) => s.clear)
 
@@ -66,6 +71,11 @@ export function SearchDetailPage() {
   const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<SearchDetailTab>('map')
   const [chatVolunteerId, setChatVolunteerId] = useState<string | null>(null)
+  const [placingRemark, setPlacingRemark] = useState(false)
+  const [pendingRemarkLocation, setPendingRemarkLocation] = useState<{
+    lat: number
+    lng: number
+  } | null>(null)
 
   // Tracks, per volunteer, the inserted_at of the last message the
   // coordinator has actually seen — kept here (not inside ChatPanel) so it
@@ -171,14 +181,39 @@ export function SearchDetailPage() {
     [search?.lastSeenCoords],
   )
 
-  // Wire layers: segments + restricted areas
+  // Wire layers: segments + restricted areas. Segment selection is
+  // suspended while placing a notice — a tap should place the pin, not
+  // also open the segment-assignment popup underneath it.
   useSegmentLayer({
     map,
     geojson: segments ?? null,
     statusBySegmentId,
-    onSegmentClick: setSelectedSegmentId,
+    onSegmentClick: placingRemark ? undefined : setSelectedSegmentId,
   })
   useRestrictedAreaLayer({ map, geojson: restrictedAreas ?? null })
+  useRemarkMarkers({ map, remarks })
+
+  // "Post a notice" — the next map click while placingRemark is true
+  // captures a location and hands off to RemarkComposer instead of
+  // submitting anything itself; this hook only owns picking the point.
+  useEffect(() => {
+    if (!map || !placingRemark) return undefined
+
+    const handleClick = (e: maplibregl.MapMouseEvent) => {
+      setPendingRemarkLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })
+      setPlacingRemark(false)
+    }
+
+    const canvas = map.getCanvas()
+    const previousCursor = canvas.style.cursor
+    canvas.style.cursor = 'crosshair'
+    map.on('click', handleClick)
+
+    return () => {
+      map.off('click', handleClick)
+      canvas.style.cursor = previousCursor
+    }
+  }, [map, placingRemark])
 
   if (isLoading) {
     return (
@@ -238,6 +273,38 @@ export function SearchDetailPage() {
               )}
 
               <div className="pointer-events-none absolute inset-0 p-4">
+                {placingRemark ? (
+                  <div className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-3 rounded-full bg-card/95 px-4 py-2 shadow-lg backdrop-blur-sm">
+                    <span className="text-sm">{t('detail.remarks.tapToPlace')}</span>
+                    <Button size="sm" variant="outline" onClick={() => setPlacingRemark(false)}>
+                      {t('detail.remarks.cancel')}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    // top-20, not top-4 — MapLibre's own NavigationControl
+                    // (zoom +/-) already occupies the top-right corner.
+                    className="pointer-events-auto absolute right-4 top-20 gap-1.5"
+                    onClick={() => {
+                      setSelectedSegmentId(null)
+                      setPlacingRemark(true)
+                    }}
+                  >
+                    <MapPinPlus className="size-3.5" />
+                    {t('detail.remarks.postNotice')}
+                  </Button>
+                )}
+
+                {pendingRemarkLocation && (
+                  <div className="pointer-events-auto absolute bottom-4 right-4 w-72">
+                    <RemarkComposer
+                      searchId={searchId}
+                      location={pendingRemarkLocation}
+                      onClose={() => setPendingRemarkLocation(null)}
+                    />
+                  </div>
+                )}
                 {selectedSegmentId != null && (
                   <div className="pointer-events-auto absolute bottom-4 right-4 w-72">
                     <SegmentAssignmentPanel

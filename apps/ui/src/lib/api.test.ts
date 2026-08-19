@@ -355,3 +355,101 @@ describe('api.photos.upload', () => {
     expect(init.headers['Content-Type']).toBeUndefined()
   })
 })
+
+describe('api.messages.listBySearch', () => {
+  it('maps remote snake_case messages to the UI shape', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: 'msg-1',
+              search_id: 'search-1',
+              volunteer_id: 'vol-1',
+              sender: 'coordinator',
+              text: 'Check the north fence line',
+              inserted_at: '2026-08-01T10:00:00Z',
+            },
+          ],
+        }),
+    })
+
+    const result = await api.messages.listBySearch('search-1')
+
+    expect(result).toEqual([
+      {
+        id: 'msg-1',
+        searchId: 'search-1',
+        volunteerId: 'vol-1',
+        sender: 'coordinator',
+        text: 'Check the north fence line',
+        insertedAt: '2026-08-01T10:00:00Z',
+      },
+    ])
+  })
+})
+
+describe('api.messages.send', () => {
+  it('POSTs a client-generated id, the volunteer_id, and text — never a sender', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'msg-1',
+            search_id: 'search-1',
+            volunteer_id: 'vol-1',
+            sender: 'coordinator',
+            text: 'On my way',
+            inserted_at: '2026-08-01T10:00:00Z',
+          },
+        }),
+    })
+
+    const result = await api.messages.send('search-1', 'vol-1', 'On my way')
+
+    expect(result.sender).toBe('coordinator')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/messages')
+    expect(init.method).toBe('POST')
+    const body = JSON.parse(init.body)
+    expect(body.message.volunteer_id).toBe('vol-1')
+    expect(body.message.text).toBe('On my way')
+    expect(typeof body.message.id).toBe('string')
+    expect(body.message.id.length).toBeGreaterThan(0)
+    // sender is never sent from the client — the backend forces it from
+    // the authenticated identity (see MessageController.create).
+    expect(body.message.sender).toBeUndefined()
+  })
+
+  it('generates a distinct id per call', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'msg-1',
+            search_id: 'search-1',
+            volunteer_id: 'vol-1',
+            sender: 'coordinator',
+            text: 'hi',
+            inserted_at: '2026-08-01T10:00:00Z',
+          },
+        }),
+    })
+
+    await api.messages.send('search-1', 'vol-1', 'first')
+    await api.messages.send('search-1', 'vol-1', 'second')
+
+    // Regression: a memoized/reused id here would rely on the backend's
+    // on_conflict: :nothing idempotency to silently discard every message
+    // after the first, rather than actually sending each one.
+    const id1 = JSON.parse(mockFetch.mock.calls[0][1].body).message.id
+    const id2 = JSON.parse(mockFetch.mock.calls[1][1].body).message.id
+    expect(id1).not.toBe(id2)
+  })
+})

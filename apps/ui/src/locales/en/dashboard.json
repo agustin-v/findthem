@@ -15,17 +15,17 @@
   "viewReport": "View report",
   "timeAgo": "{{time}} ago",
   "detail": {
-    "backToSearches": "Back to searches",
     "lastSeen": "Last seen",
+    "radius": "Radius",
     "location": "Location",
     "notFound": "Search not found.",
     "volunteers": "{{count}} volunteer",
     "volunteers_other": "{{count}} volunteers",
-    "zones": "{{searched}} / {{total}} zones",
-    "volunteersTitle": "Volunteers",
+    "volunteersLiveCount": "{{total}} · {{live}} live",
+    "zonesCleared": "Zones cleared",
     "volunteersActive": "Active",
     "volunteersPending": "Pending",
-    "online": "Online",
+    "online": "Live",
     "offline": "Offline",
     "noVolunteers": "No volunteers yet",
     "noPending": "No pending requests",
@@ -36,7 +36,38 @@
     "volunteersLoadError": "Couldn't load volunteers.",
     "zonesSearchedBy_one": "{{count}} zone searched",
     "zonesSearchedBy_other": "{{count}} zones searched",
+    "subjectKind": {
+      "person": "Subject · Person",
+      "animal": "Subject · Animal",
+      "object": "Subject · Object"
+    },
+    "tabs": {
+      "map": "Map",
+      "volunteers": "Volunteers",
+      "chat": "Chat"
+    },
+    "table": {
+      "searchPlaceholder": "Search volunteers",
+      "noResults": "No volunteers match your search.",
+      "volunteer": "Volunteer",
+      "mode": "Mode",
+      "status": "Status",
+      "assignedZone": "Assigned zone",
+      "zone": "Zone {{id}}",
+      "rowActions": "Actions for {{name}}",
+      "message": "Message",
+      "requestedAgo": "requested {{time}} ago"
+    },
+    "coverage": {
+      "title": "Coverage",
+      "zones": "{{searched}} / {{total}} zones",
+      "percentWalked": "{{percent}}% walked",
+      "searched": "Searched",
+      "inProgress": "In progress",
+      "notYetSearched": "Not yet searched"
+    },
     "invite": {
+      "button": "Invite",
       "title": "Invite volunteers",
       "copy": "Copy invite link",
       "copyFailed": "Couldn't copy the link.",
@@ -63,6 +94,19 @@
     "dismiss": "Dismiss",
     "photoUploadFailed_one": "{{failed}} of {{total}} photo failed to upload.",
     "photoUploadFailed_other": "{{failed}} of {{total}} photos failed to upload.",
+    "chat": {
+      "threads": "Threads",
+      "selectThread": "Select a volunteer to see the conversation.",
+      "noVolunteers": "No approved volunteers yet",
+      "noMessages": "No messages yet",
+      "loading": "Loading messages...",
+      "today": "Today",
+      "placeholderTo": "Message {{name}}...",
+      "send": "Send",
+      "sendFailed": "Couldn't send. Please try again.",
+      "loadFailed": "Couldn't load messages.",
+      "volunteerRemoved": "This volunteer was removed from the search."
+    },
     "assignment": {
       "title": "Segment {{id}}",
       "close": "Close",

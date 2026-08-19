@@ -70,6 +70,17 @@ export interface Volunteer {
   segmentsSearched: number
 }
 
+export type MessageSender = 'coordinator' | 'volunteer'
+
+export interface Message {
+  id: string
+  searchId: string
+  volunteerId: string
+  sender: MessageSender
+  text: string
+  insertedAt: string
+}
+
 export interface CreateSearchInput {
   subjectType: 'person' | 'animal' | 'object'
   [key: string]: unknown
@@ -123,6 +134,15 @@ interface RemoteVolunteer {
   segments_searched: number | null
 }
 
+interface RemoteMessage {
+  id: string
+  search_id: string
+  volunteer_id: string
+  sender: MessageSender
+  text: string
+  inserted_at: string
+}
+
 export interface JoinPreview {
   subjectType: 'person' | 'animal' | 'object'
   subjectName: string
@@ -147,6 +167,17 @@ function mapVolunteer(remote: RemoteVolunteer): Volunteer {
     approvedAt: remote.approved_at,
     removedAt: remote.removed_at,
     segmentsSearched: remote.segments_searched ?? 0,
+  }
+}
+
+function mapMessage(remote: RemoteMessage): Message {
+  return {
+    id: remote.id,
+    searchId: remote.search_id,
+    volunteerId: remote.volunteer_id,
+    sender: remote.sender,
+    text: remote.text,
+    insertedAt: remote.inserted_at,
   }
 }
 
@@ -318,6 +349,25 @@ export const api = {
     },
     unassign: async (searchId: string, segmentId: number, volunteerId: string): Promise<void> => {
       await apiClient.delete(`/api/searches/${searchId}/segment_assignments/${segmentId}/${volunteerId}`)
+    },
+  },
+  messages: {
+    // No volunteer_id -> every thread for the search; ChatPanel groups
+    // these client-side rather than fetching per-thread (one request
+    // covers the whole "thread list" view, matching how few messages a
+    // single search realistically has compared to, say, segments).
+    listBySearch: async (searchId: string): Promise<Message[]> => {
+      const { data } = await apiClient.get<{ data: RemoteMessage[] }>(
+        `/api/searches/${searchId}/messages`,
+      )
+      return data.map(mapMessage)
+    },
+    send: async (searchId: string, volunteerId: string, text: string): Promise<Message> => {
+      const { data } = await apiClient.post<{ data: RemoteMessage }>(
+        `/api/searches/${searchId}/messages`,
+        { message: { id: crypto.randomUUID(), volunteer_id: volunteerId, text } },
+      )
+      return mapMessage(data)
     },
   },
   photos: {

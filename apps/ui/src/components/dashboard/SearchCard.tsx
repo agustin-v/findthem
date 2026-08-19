@@ -43,8 +43,8 @@ export function SearchCard({ search }: SearchCardProps) {
             <span className="flex items-center gap-1">
               <MapPin className="size-3.5" />
               {t('zones', {
-                searched: search.zonesSearched,
-                total: search.totalZones,
+                searched: search.segmentsSearched,
+                total: search.totalSegments,
               })}
             </span>
           </div>

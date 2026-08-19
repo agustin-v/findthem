@@ -33,6 +33,7 @@ export function MapView({
     })
 
     mapRef.current = map
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
 
     map.on('load', () => {
       onMapReady?.(map)

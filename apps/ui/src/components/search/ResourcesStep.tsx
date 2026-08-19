@@ -1,27 +1,15 @@
 import { useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users, Bike, Car, Radar, Minus, Plus } from 'lucide-react'
+import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { WizardFooter } from '@/components/search/WizardFooter'
 import { cn } from '@/lib/utils'
+import { RESOURCE_TYPES } from '@/lib/resource-types'
 import type { ResourceType, ResourcesData } from '@/lib/schemas'
 
-// Same resource → color mapping as the map legend / segment layer
-// (ZoneLegend.tsx, useSegmentLayer.ts) — one resource type reads as one
-// color everywhere in the app, not just on the map.
-const resourceTypes: {
-  type: ResourceType
-  icon: typeof Users
-  labelKey: string
-  color: string
-}[] = [
-  { type: 'people', icon: Users, labelKey: 'resources.people', color: '#3b82f6' },
-  { type: 'motorbikes', icon: Bike, labelKey: 'resources.motorbikes', color: '#f59e0b' },
-  { type: 'cars', icon: Car, labelKey: 'resources.cars', color: '#10b981' },
-  { type: 'drones', icon: Radar, labelKey: 'resources.drones', color: '#8b5cf6' },
-]
+const resourceTypes = RESOURCE_TYPES.map((r) => ({ ...r, labelKey: `resources.${r.type}` }))
 
 interface ResourcesStepProps {
   defaultValues?: ResourcesData | null

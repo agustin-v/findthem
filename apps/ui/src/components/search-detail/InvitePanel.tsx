@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Check, RefreshCw } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useRotateJoinToken } from '@/hooks/useSearches'
 
@@ -38,11 +37,7 @@ export function InvitePanel({ searchId, joinToken }: InvitePanelProps) {
   }
 
   return (
-    <Card size="sm" className="bg-card/95 backdrop-blur-sm shadow-lg">
-      <CardHeader>
-        <CardTitle>{t('detail.invite.title')}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
         <div className="flex justify-center rounded-lg bg-white p-2">
           <QRCodeSVG value={joinUrl} size={128} />
         </div>
@@ -102,7 +97,6 @@ export function InvitePanel({ searchId, joinToken }: InvitePanelProps) {
         {rotateJoinToken.isError && (
           <p className="text-[13px] text-destructive">{t('detail.invite.rotateFailed')}</p>
         )}
-      </CardContent>
-    </Card>
+    </div>
   )
 }

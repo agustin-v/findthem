@@ -71,6 +71,25 @@ export function useUnassignVolunteer(searchId: string) {
   })
 }
 
+export function useMessages(searchId: string) {
+  return useQuery({
+    queryKey: ['messages', searchId],
+    queryFn: () => api.messages.listBySearch(searchId),
+    refetchInterval: 15_000,
+  })
+}
+
+export function useSendMessage(searchId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ volunteerId, text }: { volunteerId: string; text: string }) =>
+      api.messages.send(searchId, volunteerId, text),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', searchId] })
+    },
+  })
+}
+
 export function useJoinPreview(code: string) {
   return useQuery({
     queryKey: ['join-preview', code],

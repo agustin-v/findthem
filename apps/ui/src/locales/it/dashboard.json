@@ -15,17 +15,17 @@
   "viewReport": "Visualizza rapporto",
   "timeAgo": "{{time}} fa",
   "detail": {
-    "backToSearches": "Torna alle ricerche",
     "lastSeen": "Ultimo avvistamento",
+    "radius": "Raggio",
     "location": "Posizione",
     "notFound": "Ricerca non trovata.",
     "volunteers": "{{count}} volontario",
     "volunteers_other": "{{count}} volontari",
-    "zones": "{{searched}} / {{total}} zone",
-    "volunteersTitle": "Volontari",
+    "volunteersLiveCount": "{{total}} · {{live}} live",
+    "zonesCleared": "Zone perlustrate",
     "volunteersActive": "Attivi",
     "volunteersPending": "In attesa",
-    "online": "Online",
+    "online": "Live",
     "offline": "Offline",
     "noVolunteers": "Nessun volontario ancora",
     "noPending": "Nessuna richiesta in attesa",
@@ -36,7 +36,38 @@
     "volunteersLoadError": "Impossibile caricare i volontari.",
     "zonesSearchedBy_one": "{{count}} zona perlustrata",
     "zonesSearchedBy_other": "{{count}} zone perlustrate",
+    "subjectKind": {
+      "person": "Soggetto · Persona",
+      "animal": "Soggetto · Animale",
+      "object": "Soggetto · Oggetto"
+    },
+    "tabs": {
+      "map": "Mappa",
+      "volunteers": "Volontari",
+      "chat": "Chat"
+    },
+    "table": {
+      "searchPlaceholder": "Cerca volontari",
+      "noResults": "Nessun volontario corrisponde alla ricerca.",
+      "volunteer": "Volontario",
+      "mode": "Modalità",
+      "status": "Stato",
+      "assignedZone": "Zona assegnata",
+      "zone": "Zona {{id}}",
+      "rowActions": "Azioni per {{name}}",
+      "message": "Messaggio",
+      "requestedAgo": "richiesto {{time}} fa"
+    },
+    "coverage": {
+      "title": "Copertura",
+      "zones": "{{searched}} / {{total}} zone",
+      "percentWalked": "{{percent}}% perlustrato",
+      "searched": "Perlustrata",
+      "inProgress": "In corso",
+      "notYetSearched": "Non ancora perlustrata"
+    },
     "invite": {
+      "button": "Invita",
       "title": "Invita volontari",
       "copy": "Copia link di invito",
       "copyFailed": "Impossibile copiare il link.",
@@ -63,6 +94,19 @@
     "dismiss": "Ignora",
     "photoUploadFailed_one": "{{failed}} foto su {{total}} non è stata caricata.",
     "photoUploadFailed_other": "{{failed}} foto su {{total}} non sono state caricate.",
+    "chat": {
+      "threads": "Conversazioni",
+      "selectThread": "Seleziona un volontario per vedere la conversazione.",
+      "noVolunteers": "Nessun volontario approvato ancora",
+      "noMessages": "Nessun messaggio ancora",
+      "loading": "Caricamento messaggi...",
+      "today": "Oggi",
+      "placeholderTo": "Messaggio a {{name}}...",
+      "send": "Invia",
+      "sendFailed": "Invio non riuscito. Riprova.",
+      "loadFailed": "Impossibile caricare i messaggi.",
+      "volunteerRemoved": "Questo volontario è stato rimosso dalla ricerca."
+    },
     "assignment": {
       "title": "Segmento {{id}}",
       "close": "Chiudi",

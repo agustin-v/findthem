@@ -1,5 +1,6 @@
 {
   "createTitle": "Crea una nuova ricerca",
+  "newSearchBreadcrumb": "Nuova ricerca",
   "step": "Passo {{current}} di {{total}}",
   "step1Title": "Cosa stai cercando?",
   "step2Title": "Profilo del soggetto",
@@ -70,7 +71,9 @@
     "title": "Risorse",
     "systemSuggestion": "Il sistema suggerirà dopo la generazione dell'area",
     "radius": "Raggio di ricerca",
-    "radiusHint": "Dimensione dell'area di ricerca circolare (0,1 – 50 km)"
+    "radiusHint": "Dimensione dell'area di ricerca circolare (0,1 – 50 km)",
+    "decreaseCount": "Diminuisci quantità",
+    "increaseCount": "Aumenta quantità"
   },
   "review": {
     "subjectType": "Tipo di soggetto",

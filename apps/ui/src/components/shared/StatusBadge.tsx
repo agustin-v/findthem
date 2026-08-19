@@ -11,15 +11,15 @@ const statusConfig: Record<
 > = {
   active: {
     icon: Circle,
-    className: 'bg-[#1d4ed8]/10 text-[#1d4ed8] border-[#1d4ed8]/20',
+    className: 'bg-actor-coordinator-soft text-actor-coordinator border-actor-coordinator-border',
   },
   suspended: {
     icon: Pause,
-    className: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+    className: 'bg-[#FDF5E7] text-[#B27B12] border-[#F2E2BD]',
   },
   resolved: {
     icon: CheckCircle,
-    className: 'bg-[#16a34a]/10 text-[#16a34a] border-[#16a34a]/20',
+    className: 'bg-actor-volunteer-soft text-actor-volunteer border-actor-volunteer-border',
   },
 }
 

@@ -100,7 +100,7 @@ export function VolunteerCard({ searchId, volunteers, isError }: VolunteerCardPr
                       <span
                         className={cn(
                           'size-2 shrink-0 rounded-full',
-                          isOnline(v.lastActiveAt) ? 'bg-green-500' : 'bg-muted-foreground/30',
+                          isOnline(v.lastActiveAt) ? 'bg-actor-volunteer' : 'bg-muted-foreground/30',
                         )}
                         title={isOnline(v.lastActiveAt) ? t('detail.online') : t('detail.offline')}
                       />
@@ -140,7 +140,7 @@ export function VolunteerCard({ searchId, volunteers, isError }: VolunteerCardPr
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        className="text-green-600 hover:text-green-700"
+                        className="text-actor-volunteer hover:text-actor-volunteer"
                         onClick={() => setStatus.mutate({ volunteerId: v.id, status: 'approved' })}
                         disabled={setStatus.isPending}
                         aria-label={t('detail.approve')}

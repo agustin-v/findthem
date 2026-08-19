@@ -17,7 +17,7 @@ export function DashboardPage() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-base font-semibold">{t('title')}</h1>
         <Button
-          className="h-9 gap-2 bg-[#1d4ed8] text-[13px] font-medium hover:bg-[#1d4ed8]/90"
+          className="h-9 gap-2 bg-primary text-[13px] font-medium hover:bg-primary/90"
           onClick={() => navigate({ to: '/dashboard/search/new' })}
         >
           <Plus className="size-3.5" />

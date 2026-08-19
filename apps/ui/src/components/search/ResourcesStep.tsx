@@ -1,21 +1,26 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users, Bike, Car, Radar } from 'lucide-react'
+import { Users, Bike, Car, Radar, Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { WizardFooter } from '@/components/search/WizardFooter'
 import { cn } from '@/lib/utils'
 import type { ResourceType, ResourcesData } from '@/lib/schemas'
 
+// Same resource → color mapping as the map legend / segment layer
+// (ZoneLegend.tsx, useSegmentLayer.ts) — one resource type reads as one
+// color everywhere in the app, not just on the map.
 const resourceTypes: {
   type: ResourceType
   icon: typeof Users
   labelKey: string
+  color: string
 }[] = [
-  { type: 'people', icon: Users, labelKey: 'resources.people' },
-  { type: 'motorbikes', icon: Bike, labelKey: 'resources.motorbikes' },
-  { type: 'cars', icon: Car, labelKey: 'resources.cars' },
-  { type: 'drones', icon: Radar, labelKey: 'resources.drones' },
+  { type: 'people', icon: Users, labelKey: 'resources.people', color: '#3b82f6' },
+  { type: 'motorbikes', icon: Bike, labelKey: 'resources.motorbikes', color: '#f59e0b' },
+  { type: 'cars', icon: Car, labelKey: 'resources.cars', color: '#10b981' },
+  { type: 'drones', icon: Radar, labelKey: 'resources.drones', color: '#8b5cf6' },
 ]
 
 interface ResourcesStepProps {
@@ -37,26 +42,12 @@ export function ResourcesStep({
   const [needSuggestion, setNeedSuggestion] = useState(
     defaultValues?.needSuggestion ?? false,
   )
-  const [enabled, setEnabled] = useState<Record<ResourceType, boolean>>(() => {
-    const map: Record<ResourceType, boolean> = {
-      people: false,
-      motorbikes: false,
-      cars: false,
-      drones: false,
-    }
-    if (defaultValues?.resources) {
-      for (const r of defaultValues.resources) {
-        map[r.type] = true
-      }
-    }
-    return map
-  })
   const [counts, setCounts] = useState<Record<ResourceType, number>>(() => {
     const map: Record<ResourceType, number> = {
-      people: 1,
-      motorbikes: 1,
-      cars: 1,
-      drones: 1,
+      people: 0,
+      motorbikes: 0,
+      cars: 0,
+      drones: 0,
     }
     if (defaultValues?.resources) {
       for (const r of defaultValues.resources) {
@@ -66,33 +57,32 @@ export function ResourcesStep({
     return map
   })
 
-  const handleToggle = (type: ResourceType) => {
-    setEnabled((prev) => ({ ...prev, [type]: !prev[type] }))
+  const handleIncrement = (type: ResourceType) => {
+    setCounts((prev) => ({ ...prev, [type]: prev[type] + 1 }))
   }
 
-  const handleCountChange = (type: ResourceType, value: string) => {
-    const num = parseInt(value, 10)
-    if (!isNaN(num) && num >= 1) {
-      setCounts((prev) => ({ ...prev, [type]: num }))
-    }
+  const handleDecrement = (type: ResourceType) => {
+    setCounts((prev) => ({ ...prev, [type]: Math.max(0, prev[type] - 1) }))
   }
 
   const handleSubmit = () => {
     const resources = resourceTypes
-      .filter((r) => enabled[r.type])
+      .filter((r) => counts[r.type] > 0)
       .map((r) => ({ type: r.type, count: counts[r.type] }))
 
     onSubmit({ radiusKm, needSuggestion, resources })
   }
 
   const hasResources =
-    needSuggestion || resourceTypes.some((r) => enabled[r.type])
+    needSuggestion || resourceTypes.some((r) => counts[r.type] > 0)
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="radiusKm">{t('resources.radius')}</Label>
-        <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="radiusKm" className="text-sm font-semibold">
+          {t('resources.radius')}
+        </Label>
+        <div className="flex items-center gap-2.5">
           <Input
             id="radiusKm"
             type="number"
@@ -104,9 +94,9 @@ export function ResourcesStep({
               const v = parseFloat(e.target.value)
               if (!isNaN(v)) setRadiusKm(v)
             }}
-            className="h-9 w-24"
+            className="h-11 w-[110px] text-base font-semibold"
           />
-          <span className="text-sm text-muted-foreground">km</span>
+          <span className="text-[15px] text-muted-foreground">km</span>
         </div>
         <p className="text-[13px] text-muted-foreground">
           {t('resources.radiusHint')}
@@ -117,26 +107,24 @@ export function ResourcesStep({
         type="button"
         onClick={() => setNeedSuggestion(!needSuggestion)}
         className={cn(
-          'flex min-h-[48px] w-full items-center gap-3 rounded-lg border p-3 text-left transition-all duration-150',
+          'flex w-full items-center gap-3.5 rounded-xl border p-4 text-left transition-all duration-150',
           needSuggestion
-            ? 'border-[#1d4ed8] bg-[#1d4ed8]/5'
+            ? 'border-primary bg-primary/5'
             : 'border-border hover:border-foreground/30',
         )}
       >
         <div
           className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+            'flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 transition-colors',
             needSuggestion
-              ? 'border-[#1d4ed8] bg-[#1d4ed8]'
+              ? 'border-primary bg-primary'
               : 'border-muted-foreground/40',
           )}
         >
-          {needSuggestion && (
-            <div className="size-2 rounded-full bg-white" />
-          )}
+          {needSuggestion && <div className="size-2 rounded-full bg-white" />}
         </div>
         <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium">
+          <span className="text-[15px] font-semibold">
             {t('resources.toggle')}
           </span>
           <span className="text-[13px] text-muted-foreground">
@@ -145,78 +133,81 @@ export function ResourcesStep({
         </div>
       </button>
 
+      <p className="text-[13px] text-muted-foreground">{t('resources.systemSuggestion')}</p>
+
       <div
         className={cn(
-          'grid grid-cols-2 gap-2 transition-opacity',
+          'grid grid-cols-2 gap-3 transition-opacity',
           needSuggestion && 'pointer-events-none opacity-40',
         )}
       >
         {resourceTypes.map((resource) => {
           const Icon = resource.icon
-          const isActive = enabled[resource.type]
+          const count = counts[resource.type]
+          const isActive = count > 0
 
           return (
             <div
               key={resource.type}
-              className={cn(
-                'flex flex-col gap-2 rounded-lg border p-3 transition-all duration-150',
+              style={
                 isActive
-                  ? 'border-[#1d4ed8] bg-[#1d4ed8]/5'
+                  ? ({ '--resource-color': resource.color } as CSSProperties)
+                  : undefined
+              }
+              className={cn(
+                'flex items-center gap-3 rounded-xl border p-3.5 transition-all duration-150',
+                isActive
+                  ? 'border-2 border-[var(--resource-color)] p-[13px] shadow-[0_4px_12px_-4px_var(--resource-color)]'
                   : 'border-border',
               )}
             >
-              <button
-                type="button"
-                onClick={() => handleToggle(resource.type)}
-                className="flex items-center gap-2"
+              <div
+                className={cn(
+                  'flex size-[34px] shrink-0 items-center justify-center rounded-[9px]',
+                  isActive ? 'bg-[var(--resource-color)]/10' : 'bg-muted',
+                )}
               >
-                <div
-                  className={cn(
-                    'flex size-9 shrink-0 items-center justify-center rounded-md',
-                    isActive ? 'bg-[#1d4ed8]/10' : 'bg-muted',
-                  )}
+                <Icon
+                  className={cn('size-[17px]', !isActive && 'text-muted-foreground')}
+                  style={isActive ? { color: resource.color } : undefined}
+                />
+              </div>
+              <span
+                className={cn(
+                  'flex-1 text-[15px] font-semibold',
+                  !isActive && 'text-muted-foreground',
+                )}
+              >
+                {t(resource.labelKey)}
+              </span>
+              <div className="flex items-center overflow-hidden rounded-lg border border-border">
+                <button
+                  type="button"
+                  aria-label={t('resources.decreaseCount')}
+                  disabled={count <= 0}
+                  onClick={() => handleDecrement(resource.type)}
+                  className="flex size-[30px] items-center justify-center text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40"
                 >
-                  <Icon
-                    className={cn(
-                      'size-4',
-                      isActive
-                        ? 'text-[#1d4ed8]'
-                        : 'text-muted-foreground',
-                    )}
-                  />
-                </div>
-                <span
-                  className={cn(
-                    'text-sm font-medium',
-                    !isActive && 'text-muted-foreground',
-                  )}
-                >
-                  {t(resource.labelKey)}
+                  <Minus className="size-3.5" />
+                </button>
+                <span className="flex size-[32px] items-center justify-center border-x border-border text-[15px] font-bold tabular-nums">
+                  {count}
                 </span>
-              </button>
-
-              {isActive && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-muted-foreground">
-                    {t('resources.count')}
-                  </span>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={counts[resource.type]}
-                    onChange={(e) =>
-                      handleCountChange(resource.type, e.target.value)
-                    }
-                    className="h-8 w-16 text-center"
-                  />
-                </div>
-              )}
+                <button
+                  type="button"
+                  aria-label={t('resources.increaseCount')}
+                  onClick={() => handleIncrement(resource.type)}
+                  className="flex size-[30px] items-center justify-center text-foreground transition-colors hover:bg-muted"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              </div>
             </div>
           )
         })}
       </div>
 
-      <div className="flex gap-3 pt-1">
+      <WizardFooter>
         <Button
           type="button"
           variant="outline"
@@ -227,13 +218,13 @@ export function ResourcesStep({
         </Button>
         <Button
           type="button"
-          className="h-11 flex-1 bg-[#1d4ed8] font-medium hover:bg-[#1d4ed8]/90"
+          className="h-11 flex-1 font-medium"
           disabled={!hasResources}
           onClick={handleSubmit}
         >
           {tc('next')}
         </Button>
-      </div>
+      </WizardFooter>
     </div>
   )
 }

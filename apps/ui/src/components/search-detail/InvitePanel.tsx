@@ -58,7 +58,7 @@ export function InvitePanel({ searchId, joinToken }: InvitePanelProps) {
             onClick={handleCopy}
             aria-label={t('detail.invite.copy')}
           >
-            {copied ? <Check className="text-green-600" /> : <Copy />}
+            {copied ? <Check className="text-actor-volunteer" /> : <Copy />}
           </Button>
         </div>
         {copyFailed && (

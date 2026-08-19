@@ -82,7 +82,7 @@ export function LocationPicker({
         ? [value.lng, value.lat]
         : [12.4964, 41.9028]
 
-      const marker = new maplibregl.Marker({ color: '#1d4ed8', draggable: true })
+      const marker = new maplibregl.Marker({ color: '#E4571B', draggable: true })
         .setLngLat(lngLat)
         .addTo(map)
 

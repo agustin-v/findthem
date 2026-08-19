@@ -1,5 +1,10 @@
 {
   "appName": "findthem",
+  "searches": "Ricerche",
+  "settings": "Impostazioni",
+  "coordinator": "Coordinatore",
+  "collapse": "Comprimi",
+  "expand": "Espandi",
   "loading": "Caricamento...",
   "error": "Qualcosa è andato storto",
   "back": "Indietro",

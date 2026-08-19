@@ -10,6 +10,7 @@ import { LandingPage } from '@/pages/LandingPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { NewSearchPage } from '@/pages/NewSearchPage'
 import { SearchDetailPage } from '@/pages/SearchDetailPage'
+import { SettingsPage } from '@/pages/SettingsPage'
 import { JoinLandingPage } from '@/pages/JoinLandingPage'
 import { isAuthenticated } from '@/lib/auth-bridge'
 
@@ -60,10 +61,21 @@ const searchDetailRoute = createRoute({
   component: SearchDetailPage,
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => dashboardRoute,
+  path: '/settings',
+  component: SettingsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   joinRoute,
-  dashboardRoute.addChildren([dashboardIndexRoute, newSearchRoute, searchDetailRoute]),
+  dashboardRoute.addChildren([
+    dashboardIndexRoute,
+    newSearchRoute,
+    searchDetailRoute,
+    settingsRoute,
+  ]),
 ])
 
 export const router = createRouter({ routeTree })

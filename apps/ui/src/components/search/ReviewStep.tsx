@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { WizardFooter } from '@/components/search/WizardFooter'
 import { StaticMapPreview } from '@/components/shared/StaticMapPreview'
 import type {
   SubjectType,
@@ -209,7 +210,7 @@ export function ReviewStep({
 
       {error && <p className="text-[13px] text-destructive">{error}</p>}
 
-      <div className="flex gap-3 pt-1">
+      <WizardFooter>
         <Button
           type="button"
           variant="outline"
@@ -221,13 +222,13 @@ export function ReviewStep({
         </Button>
         <Button
           type="button"
-          className="h-11 flex-1 bg-[#1d4ed8] font-medium hover:bg-[#1d4ed8]/90"
+          className="h-11 flex-1 font-medium"
           onClick={onSubmit}
           disabled={isSubmitting}
         >
           {isSubmitting ? t('creating') : t('createSearch')}
         </Button>
-      </div>
+      </WizardFooter>
     </div>
   )
 }

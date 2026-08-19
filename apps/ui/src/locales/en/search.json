@@ -1,5 +1,6 @@
 {
   "createTitle": "Create a new search",
+  "newSearchBreadcrumb": "New search",
   "step": "Step {{current}} of {{total}}",
   "step1Title": "What are you searching for?",
   "step2Title": "Subject profile",
@@ -70,7 +71,9 @@
     "title": "Resources",
     "systemSuggestion": "System will suggest after area generation",
     "radius": "Search radius",
-    "radiusHint": "Size of the circular search area (0.1 – 50 km)"
+    "radiusHint": "Size of the circular search area (0.1 – 50 km)",
+    "decreaseCount": "Decrease count",
+    "increaseCount": "Increase count"
   },
   "review": {
     "subjectType": "Subject type",

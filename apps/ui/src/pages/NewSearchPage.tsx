@@ -2,7 +2,8 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { StepIndicator } from '@/components/search/StepIndicator'
+import { WizardShell } from '@/components/search/WizardShell'
+import { WizardFooter } from '@/components/search/WizardFooter'
 import { SubjectTypeSelector } from '@/components/search/SubjectTypeSelector'
 import { PersonForm } from '@/components/search/PersonForm'
 import { AnimalForm } from '@/components/search/AnimalForm'
@@ -124,74 +125,66 @@ export function NewSearchPage() {
           : t('step4Title')
 
   return (
-    <div className="mx-auto w-full max-w-[600px] px-4 py-4">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <StepIndicator current={step} total={4} />
-          <h1 className="text-base font-semibold">{stepTitle}</h1>
-        </div>
-
-        {step === 1 && (
-          <>
-            <SubjectTypeSelector
-              value={subjectType}
-              onChange={setSubjectType}
-            />
+    <WizardShell step={step} total={4} title={stepTitle}>
+      {step === 1 && (
+        <>
+          <SubjectTypeSelector value={subjectType} onChange={setSubjectType} />
+          <WizardFooter className="justify-end">
             <Button
-              className="h-11 w-full bg-[#1d4ed8] font-medium hover:bg-[#1d4ed8]/90"
+              className="h-11 px-8 font-medium"
               disabled={!subjectType}
               onClick={() => setStep(2)}
             >
               {tc('next')}
             </Button>
-          </>
-        )}
+          </WizardFooter>
+        </>
+      )}
 
-        {step === 2 && subjectType === 'person' && (
-          <PersonForm
-            defaultValues={formData as PersonData | undefined}
-            onSubmit={handleStep2Submit}
-            onBack={() => setStep(1)}
-          />
-        )}
+      {step === 2 && subjectType === 'person' && (
+        <PersonForm
+          defaultValues={formData as PersonData | undefined}
+          onSubmit={handleStep2Submit}
+          onBack={() => setStep(1)}
+        />
+      )}
 
-        {step === 2 && subjectType === 'animal' && (
-          <AnimalForm
-            defaultValues={formData as AnimalData | undefined}
-            onSubmit={handleStep2Submit}
-            onBack={() => setStep(1)}
-          />
-        )}
+      {step === 2 && subjectType === 'animal' && (
+        <AnimalForm
+          defaultValues={formData as AnimalData | undefined}
+          onSubmit={handleStep2Submit}
+          onBack={() => setStep(1)}
+        />
+      )}
 
-        {step === 2 && subjectType === 'object' && (
-          <ObjectForm
-            defaultValues={formData as ObjectData | undefined}
-            onSubmit={handleStep2Submit}
-            onBack={() => setStep(1)}
-          />
-        )}
+      {step === 2 && subjectType === 'object' && (
+        <ObjectForm
+          defaultValues={formData as ObjectData | undefined}
+          onSubmit={handleStep2Submit}
+          onBack={() => setStep(1)}
+        />
+      )}
 
-        {step === 3 && (
-          <ResourcesStep
-            defaultValues={resourcesData}
-            onBack={() => setStep(2)}
-            onSubmit={handleStep3Submit}
-          />
-        )}
+      {step === 3 && (
+        <ResourcesStep
+          defaultValues={resourcesData}
+          onBack={() => setStep(2)}
+          onSubmit={handleStep3Submit}
+        />
+      )}
 
-        {step === 4 && subjectType && formData && (
-          <ReviewStep
-            subjectType={subjectType}
-            data={formData}
-            resourcesData={resourcesData}
-            onBack={() => setStep(3)}
-            onSubmit={handleCreate}
-            isSubmitting={createSearch.isPending || isGenerating}
-            error={createSearch.isError ? formatCreateError(createSearch.error) : undefined}
-          />
-        )}
-      </div>
-    </div>
+      {step === 4 && subjectType && formData && (
+        <ReviewStep
+          subjectType={subjectType}
+          data={formData}
+          resourcesData={resourcesData}
+          onBack={() => setStep(3)}
+          onSubmit={handleCreate}
+          isSubmitting={createSearch.isPending || isGenerating}
+          error={createSearch.isError ? formatCreateError(createSearch.error) : undefined}
+        />
+      )}
+    </WizardShell>
   )
 }
 

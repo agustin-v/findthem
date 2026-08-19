@@ -1,5 +1,10 @@
 {
   "appName": "findthem",
+  "searches": "Searches",
+  "settings": "Settings",
+  "coordinator": "Coordinator",
+  "collapse": "Collapse",
+  "expand": "Expand",
   "loading": "Loading...",
   "error": "Something went wrong",
   "back": "Back",

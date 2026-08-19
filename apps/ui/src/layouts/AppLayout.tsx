@@ -1,19 +1,12 @@
 import { Outlet, useNavigate, useMatches } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { UserButton } from '@clerk/react'
-import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
-import { ThemeSwitcher } from '@/components/shared/ThemeSwitcher'
+import { Sidebar } from '@/components/shared/Sidebar'
 import { useSearch } from '@/hooks/useSearches'
 
 function BreadcrumbSegment({ searchId }: { searchId: string }) {
   const { data: search } = useSearch(searchId)
   if (!search) return null
-  return (
-    <>
-      <span className="text-muted-foreground/40 mx-1">&gt;</span>
-      <span className="truncate">{search.subjectName}</span>
-    </>
-  )
+  return <span className="truncate font-semibold">{search.subjectName}</span>
 }
 
 export function AppLayout() {
@@ -21,31 +14,30 @@ export function AppLayout() {
   const navigate = useNavigate()
   const matches = useMatches()
 
-  const detailMatch = matches.find(
-    (m) => m.routeId === '/dashboard/search/$searchId',
-  )
+  const detailMatch = matches.find((m) => m.routeId === '/dashboard/search/$searchId')
   const searchId = (detailMatch?.params as { searchId?: string })?.searchId
+  const isWizard = matches.some((m) => m.routeId === '/dashboard/search/new')
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
-      <header className="flex h-12 items-center justify-between border-b px-4">
-        <div className="flex items-center text-base font-semibold tracking-tight">
-          <button onClick={() => navigate({ to: '/dashboard' })}>
-            {t('appName')}
-          </button>
-          {searchId && <BreadcrumbSegment searchId={searchId} />}
-        </div>
-        <div className="flex items-center gap-1">
-          <ThemeSwitcher />
-          <span className="text-muted-foreground/40">·</span>
-          <LanguageSwitcher />
-          <span className="text-muted-foreground/40">·</span>
-          <UserButton />
-        </div>
-      </header>
-      <main className="flex-1">
-        <Outlet />
-      </main>
+    <div className="flex min-h-dvh bg-background">
+      <Sidebar forceCollapsed={isWizard} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {searchId && (
+          <header className="flex h-12 shrink-0 items-center gap-1.5 border-b border-border px-5 text-sm">
+            <button
+              onClick={() => navigate({ to: '/dashboard' })}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              {t('searches')}
+            </button>
+            <span className="text-muted-foreground/40">/</span>
+            <BreadcrumbSegment searchId={searchId} />
+          </header>
+        )}
+        <main className="min-h-0 flex-1">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

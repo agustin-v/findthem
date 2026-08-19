@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { ImageUploader } from '@/components/search/ImageUploader'
+import { WizardFooter } from '@/components/search/WizardFooter'
 import { LocationPicker, type LocationValue } from '@/components/shared/LocationPicker'
 import { personSchema, type PersonData } from '@/lib/schemas'
 import { nowForDateTimeLocal } from '@/lib/utils'
@@ -222,7 +223,7 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
         />
       </div>
 
-      <div className="flex gap-3 pt-2">
+      <WizardFooter>
         <Button
           type="button"
           variant="outline"
@@ -231,13 +232,10 @@ export function PersonForm({ defaultValues, onSubmit, onBack }: PersonFormProps)
         >
           {tc('back')}
         </Button>
-        <Button
-          type="submit"
-          className="h-11 flex-1 bg-[#1d4ed8] font-medium hover:bg-[#1d4ed8]/90"
-        >
+        <Button type="submit" className="h-11 flex-1 font-medium">
           {tc('next')}
         </Button>
-      </div>
+      </WizardFooter>
     </form>
   )
 }

@@ -12,7 +12,7 @@ interface StaticMapPreviewProps {
 export function StaticMapPreview({ lat, lng, className }: StaticMapPreviewProps) {
   const handleMapReady = useCallback(
     (map: maplibregl.Map) => {
-      new maplibregl.Marker({ color: '#1d4ed8' })
+      new maplibregl.Marker({ color: '#E4571B' })
         .setLngLat([lng, lat])
         .addTo(map)
 

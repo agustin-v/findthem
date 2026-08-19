@@ -17,7 +17,7 @@ export function EmptyState() {
         <p className="text-[13px] text-muted-foreground">{t('emptyDescription')}</p>
       </div>
       <Button
-        className="h-9 bg-[#1d4ed8] text-[13px] font-medium hover:bg-[#1d4ed8]/90"
+        className="h-9 bg-primary text-[13px] font-medium hover:bg-primary/90"
         onClick={() => navigate({ to: '/dashboard/search/new' })}
       >
         {t('firstSearch')}

@@ -74,17 +74,20 @@ const STATUS_HEADLINES: Record<SegmentStatus, string> = {
 
 // Same kind → color/symbol mapping as apps/ui's useRemarkMarkers.ts — one
 // remark kind reads the same way on both the coordinator's and the
-// volunteer's map.
-const REMARK_KIND_COLOR: Record<string, string> = {
-  sighting: '#3b82f6',
-  hazard: '#dc2626',
-  note: '#6b7280',
-};
-const REMARK_KIND_SYMBOL: Record<string, string> = {
-  sighting: '\u{1F441}', // eye
-  hazard: '⚠', // warning triangle
-  note: '\u{1F4DD}', // memo
-};
+// volunteer's map. Map, not a plain object — `kind` comes from the
+// backend and, pre-validation, could be a string like "constructor" that
+// resolves to an inherited Object.prototype member on a plain object
+// lookup instead of undefined, silently defeating the `??` fallback below.
+const REMARK_KIND_COLOR = new Map<string, string>([
+  ['sighting', '#3b82f6'],
+  ['hazard', '#dc2626'],
+  ['note', '#6b7280'],
+]);
+const REMARK_KIND_SYMBOL = new Map<string, string>([
+  ['sighting', '\u{1F441}'], // eye
+  ['hazard', '⚠'], // warning triangle
+  ['note', '\u{1F4DD}'], // memo
+]);
 
 type ScreenState = 'loading' | 'ready' | 'retry' | 'expired';
 
@@ -518,10 +521,10 @@ export default function MapScreen() {
               <View
                 style={[
                   styles.remarkMarker,
-                  { backgroundColor: REMARK_KIND_COLOR[remark.kind] ?? theme.textSecondary },
+                  { backgroundColor: REMARK_KIND_COLOR.get(remark.kind) ?? theme.textSecondary },
                 ]}>
                 <Text style={styles.remarkMarkerSymbol}>
-                  {REMARK_KIND_SYMBOL[remark.kind] ?? '\u{1F4CD}'}
+                  {REMARK_KIND_SYMBOL.get(remark.kind) ?? '\u{1F4CD}'}
                 </Text>
               </View>
             </Marker>
@@ -699,7 +702,7 @@ export default function MapScreen() {
                         ]}>
                         <ThemedText
                           type="small"
-                          style={{ color: REMARK_KIND_COLOR[selectedRemark.kind] ?? theme.text }}>
+                          style={{ color: REMARK_KIND_COLOR.get(selectedRemark.kind) ?? theme.text }}>
                           {selectedRemark.kind}
                         </ThemedText>
                       </View>

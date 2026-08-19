@@ -238,7 +238,7 @@ export async function getVolunteerSearch(token: string): Promise<VolunteerSearch
     segments: data.segments.map(mapVolunteerSegment),
     generation: data.generation ? { segments: data.generation.response.segments } : null,
     mySegmentIds: data.my_segment_ids,
-    remarks: data.remarks.map(mapRemark),
+    remarks: data.remarks?.map(mapRemark) ?? [],
   };
 }
 

@@ -258,6 +258,38 @@ describe('getVolunteerSearch', () => {
     expect(result.mySegmentIds).toEqual([]);
     expect(result.remarks).toEqual([]);
   });
+
+  it('defaults remarks to an empty array when the field is missing (API/mobile version skew)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            search: {
+              id: 'search-1',
+              subject_type: 'person',
+              subject_name: 'Marco Rossi',
+              subject_details: {},
+              status: 'active',
+              contact_phone: '+390612345',
+              lkp_lat: null,
+              lkp_lng: null,
+              lkp_address: null,
+              lkp_at: null,
+              photo_urls: [],
+            },
+            segments: [],
+            generation: null,
+            my_segment_ids: [],
+            // remarks intentionally omitted
+          },
+        }),
+    });
+
+    const result = await getVolunteerSearch('the-token');
+
+    expect(result.remarks).toEqual([]);
+  });
 });
 
 describe('updateSegmentStatus', () => {

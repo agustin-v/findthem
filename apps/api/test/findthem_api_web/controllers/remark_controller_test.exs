@@ -19,7 +19,7 @@ defmodule FindThemApiWeb.RemarkControllerTest do
     %{conn: authed_conn(conn, "user_owner_remarks_ctrl"), search: search}
   end
 
-  test "POST /api/searches/:id/remarks round-trips a client-supplied uuid and reported_at", %{
+  test "POST /api/searches/:id/remarks round-trips a client-supplied uuid, reported_at, and position", %{
     conn: conn,
     search: search
   } do
@@ -30,8 +30,10 @@ defmodule FindThemApiWeb.RemarkControllerTest do
       post(conn, ~p"/api/searches/#{search.id}/remarks", %{
         "remark" => %{
           "id" => id,
-          "kind" => "sighting",
-          "text" => "Saw someone matching description",
+          "kind" => "hazard",
+          "text" => "Bridge is down",
+          "lat" => 41.9,
+          "lng" => 12.5,
           "reported_at" => reported_at
         }
       })
@@ -39,6 +41,28 @@ defmodule FindThemApiWeb.RemarkControllerTest do
     assert %{"data" => data} = json_response(conn, 201)
     assert data["id"] == id
     assert data["reported_at"] == reported_at
+    assert data["lat"] == 41.9
+    assert data["lng"] == 12.5
+  end
+
+  # A map notice with no position doesn't make sense — unlike the volunteer
+  # flow (a denied/failed GPS fix still lets a report through with no pin),
+  # this path requires lat/lng specifically so a coordinator's notice never
+  # silently lands at (0,0) or gets dropped from the map entirely.
+  test "POST /api/searches/:id/remarks requires lat and lng", %{conn: conn, search: search} do
+    conn =
+      post(conn, ~p"/api/searches/#{search.id}/remarks", %{
+        "remark" => %{
+          "id" => Ecto.UUID.generate(),
+          "kind" => "hazard",
+          "text" => "Bridge is down",
+          "reported_at" => "2026-08-01T10:00:00Z"
+        }
+      })
+
+    assert %{"errors" => errors} = json_response(conn, 422)
+    assert errors["lat"]
+    assert errors["lng"]
   end
 
   test "GET /api/searches/:id/remarks lists remarks for the search", %{
@@ -50,6 +74,8 @@ defmodule FindThemApiWeb.RemarkControllerTest do
         "id" => Ecto.UUID.generate(),
         "kind" => "sighting",
         "text" => "Note",
+        "lat" => 41.9,
+        "lng" => 12.5,
         "reported_at" => "2026-08-01T10:00:00Z"
       }
     })

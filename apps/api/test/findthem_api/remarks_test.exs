@@ -126,4 +126,56 @@ defmodule FindThemApi.RemarksTest do
     assert "should be at most 100 character(s)" in errors_on(changeset).kind
     assert "should be at most 255 character(s)" in errors_on(changeset).text
   end
+
+  test "create_map_remark/2 succeeds when lat/lng are present", %{search: search} do
+    {:ok, remark} =
+      Remarks.create_map_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        kind: "hazard",
+        text: "Bridge is down",
+        lat: 41.9,
+        lng: 12.5,
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    assert remark.lat == 41.9
+    assert remark.lng == 12.5
+  end
+
+  test "create_map_remark/2 rejects a missing lat or lng, unlike create_remark/2", %{
+    search: search
+  } do
+    attrs = %{
+      id: Ecto.UUID.generate(),
+      kind: "hazard",
+      text: "Bridge is down",
+      reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    }
+
+    {:error, changeset} = Remarks.create_map_remark(search.id, attrs)
+    assert "is required for a map notice" in errors_on(changeset).lat
+    assert "is required for a map notice" in errors_on(changeset).lng
+
+    # The shared volunteer-facing path is untouched by this guard.
+    assert {:ok, _remark} = Remarks.create_remark(search.id, attrs)
+  end
+
+  test "create_map_remark/2 broadcasts remark_created same as create_remark/2", %{
+    search: search
+  } do
+    Phoenix.PubSub.subscribe(FindThemApi.PubSub, "search:#{search.id}")
+
+    {:ok, remark} =
+      Remarks.create_map_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        kind: "hazard",
+        text: "Bridge is down",
+        lat: 41.9,
+        lng: 12.5,
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    id = remark.id
+    assert_receive {:remark_created, %{id: ^id}}
+  end
 end

@@ -15,7 +15,7 @@ defmodule FindThemApiWeb.RemarkController do
   def create(conn, %{"search_id" => search_id, "remark" => remark_params})
       when is_map(remark_params) do
     with {:ok, _search} <- Searches.get_search_for_owner(conn.assigns.current_user.id, search_id),
-         {:ok, remark} <- Remarks.create_remark(search_id, remark_params) do
+         {:ok, remark} <- Remarks.create_map_remark(search_id, remark_params) do
       conn
       |> put_status(:created)
       |> render(:show, remark: remark)

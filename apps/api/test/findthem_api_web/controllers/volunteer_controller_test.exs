@@ -96,6 +96,39 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert data["segments"] == []
     assert data["generation"] == nil
     assert data["my_segment_ids"] == []
+    assert data["remarks"] == []
+  end
+
+  test "GET /volunteer/search includes every remark on the search, not just this volunteer's own",
+       %{conn: conn, search: search} do
+    {volunteer, token} = approved_volunteer(search)
+    {:ok, other_volunteer, _other_token} = another_approved_volunteer(search)
+
+    {:ok, _mine} =
+      FindThemApi.Remarks.create_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        volunteer_id: volunteer.id,
+        kind: "sighting",
+        lat: 41.9,
+        lng: 12.5,
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    {:ok, _theirs} =
+      FindThemApi.Remarks.create_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        volunteer_id: other_volunteer.id,
+        kind: "hazard",
+        text: "Bridge is down",
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    conn = conn |> auth(token) |> get(~p"/volunteer/search")
+
+    assert %{"data" => %{"remarks" => remarks}} = json_response(conn, 200)
+    assert length(remarks) == 2
+    kinds = Enum.map(remarks, & &1["kind"]) |> Enum.sort()
+    assert kinds == ["hazard", "sighting"]
   end
 
   test "GET /volunteer/search includes signed photo URLs — a volunteer needs to know who they're looking for",

@@ -5,13 +5,20 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
   # included (subject photos, Story 27) — a volunteer searching for
   # someone needs to know what they look like; short-lived presigned URLs
   # generated the same way as the coordinator-facing SearchJSON.
-  def show(%{search: search, segments: segments, generation: generation, my_segment_ids: my_segment_ids}) do
+  def show(%{
+        search: search,
+        segments: segments,
+        generation: generation,
+        my_segment_ids: my_segment_ids,
+        remarks: remarks
+      }) do
     %{
       data: %{
         search: search_data(search),
         segments: Enum.map(segments, &segment_data/1),
         generation: generation_data(generation),
-        my_segment_ids: my_segment_ids
+        my_segment_ids: my_segment_ids,
+        remarks: Enum.map(remarks, &FindThemApiWeb.RemarkJSON.remark_data/1)
       }
     }
   end

@@ -63,10 +63,26 @@ defmodule FindThemApi.Messages do
   # text to every joined client, indistinguishable from a real message.
   # Re-fetching the row we actually have guarantees the broadcast (and the
   # HTTP response) always reflect the database, not the request.
+  #
+  # Scoped by search_id, not just Repo.get! by id alone — the id is
+  # client-supplied, and on_conflict: :nothing means posting an id that
+  # already exists *in a different search* writes nothing but still
+  # matched a real row. An unscoped reload would return and broadcast
+  # that other search's private message content into the attacker's own
+  # search — same class of bug found and fixed in Remarks.
+  # reload_and_broadcast/3 (Story 37's security review); a coordinator
+  # sees every message id on searches they own via GET /api/searches/
+  # :id/messages, so owning two searches is enough to replay one
+  # search's message id into the other.
   defp reload_and_broadcast({:ok, %Message{id: id}}, search_id, event) do
-    message = Repo.get!(Message, id)
-    Phoenix.PubSub.broadcast(FindThemApi.PubSub, "search:#{search_id}", {event, message})
-    {:ok, message}
+    case Repo.get_by(Message, id: id, search_id: search_id) do
+      nil ->
+        {:error, :id_belongs_to_another_search}
+
+      message ->
+        Phoenix.PubSub.broadcast(FindThemApi.PubSub, "search:#{search_id}", {event, message})
+        {:ok, message}
+    end
   end
 
   defp reload_and_broadcast(error, _search_id, _event), do: error

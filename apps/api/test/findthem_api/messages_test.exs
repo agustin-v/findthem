@@ -235,6 +235,49 @@ defmodule FindThemApi.MessagesTest do
     assert "can't be blank" in errors_on(changeset).text
   end
 
+  test "create_message/2 posting an id that already belongs to another search errors instead of leaking that search's message",
+       %{search: search, volunteer: volunteer} do
+    {:ok, owner2} = Accounts.get_or_provision("user_owner_msg_c", %{email: "msgc@example.com"})
+
+    {:ok, other_search} =
+      Searches.create_search(owner2.id, %{
+        subject_type: "person",
+        subject_name: "Someone Else",
+        contact_phone: "+390612345"
+      })
+
+    {:ok, other_volunteer} =
+      Volunteers.join_volunteer(other_search.id, %{name: "Luca", phone: "+39062"})
+
+    id = Ecto.UUID.generate()
+
+    {:ok, other_message} =
+      Messages.create_message(other_search.id, %{
+        id: id,
+        volunteer_id: other_volunteer.id,
+        sender: "coordinator",
+        text: "Private message on the other search"
+      })
+
+    Phoenix.PubSub.subscribe(FindThemApi.PubSub, "search:#{search.id}")
+
+    assert {:error, :id_belongs_to_another_search} =
+             Messages.create_message(search.id, %{
+               id: id,
+               volunteer_id: volunteer.id,
+               sender: "coordinator",
+               text: "Attacker-controlled replay from a different search"
+             })
+
+    # Nothing was written into this search, and the other search's
+    # private content was never broadcast onto this search's topic.
+    assert Messages.list_by_search(search.id) == []
+    refute_receive {:message_created, _}
+
+    # The other search's original message is untouched.
+    assert Messages.list_by_search(other_search.id) == [other_message]
+  end
+
   test "list_by_search_and_volunteer/2 scopes to one thread", %{
     search: search,
     volunteer: volunteer

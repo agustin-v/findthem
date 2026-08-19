@@ -42,6 +42,17 @@ defmodule FindThemApi.Remarks.Remark do
     # ZWJ-heavy string could pass a grapheme-counted check yet still
     # overflow the column (see Message.changeset for the same fix, found
     # via a family-emoji repro).
+    # Every other enum-ish field in this codebase (Message.sender,
+    # Segment.status, Search.status/subject_type, Volunteer.status/
+    # resource_type) is validate_inclusion'd — kind was the one exception,
+    # and both apps/ui's and apps/mobile's kind → color/symbol lookups are
+    # plain object/map literals keyed by it. An unconstrained kind (e.g.
+    # "constructor" or "toString") resolves to an inherited Object.prototype
+    # function instead of undefined, so the `?? fallback` guard on those
+    # lookups never fires — not XSS (both clients render it as inert text/
+    # style, never HTML), but real map defacement any approved volunteer
+    # could trigger.
+    |> validate_inclusion(:kind, ~w(sighting hazard note))
     |> validate_length(:kind, max: 100, count: :codepoints)
     |> validate_length(:text, max: 255, count: :codepoints)
     |> validate_number(:lat, greater_than_or_equal_to: -90, less_than_or_equal_to: 90)

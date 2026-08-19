@@ -127,6 +127,59 @@ defmodule FindThemApi.RemarksTest do
     assert "should be at most 255 character(s)" in errors_on(changeset).text
   end
 
+  test "create_remark/2 rejects a kind outside the fixed set instead of persisting an arbitrary string",
+       %{search: search} do
+    {:error, changeset} =
+      Remarks.create_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        kind: "constructor",
+        text: "trying to break the frontend's kind -> color lookup",
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    assert "is invalid" in errors_on(changeset).kind
+  end
+
+  test "create_remark/2 posting an id that already belongs to another search errors instead of leaking that search's remark",
+       %{search: search} do
+    {:ok, owner2} = Accounts.get_or_provision("user_owner3c", %{email: "o3c@example.com"})
+
+    {:ok, other_search} =
+      Searches.create_search(owner2.id, %{
+        subject_type: "person",
+        subject_name: "Someone Else",
+        contact_phone: "+390612345"
+      })
+
+    id = Ecto.UUID.generate()
+
+    {:ok, other_remark} =
+      Remarks.create_remark(other_search.id, %{
+        id: id,
+        kind: "hazard",
+        text: "Private note on the other search",
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    Phoenix.PubSub.subscribe(FindThemApi.PubSub, "search:#{search.id}")
+
+    assert {:error, :id_belongs_to_another_search} =
+             Remarks.create_remark(search.id, %{
+               id: id,
+               kind: "sighting",
+               text: "Attacker-controlled replay from a different search",
+               reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+             })
+
+    # Nothing was written into this search, and the other search's
+    # private content was never broadcast onto this search's topic.
+    assert Remarks.list_by_search(search.id) == []
+    refute_receive {:remark_created, _}
+
+    # The other search's original remark is untouched.
+    assert Remarks.list_by_search(other_search.id) == [other_remark]
+  end
+
   test "create_map_remark/2 succeeds when lat/lng are present", %{search: search} do
     {:ok, remark} =
       Remarks.create_map_remark(search.id, %{

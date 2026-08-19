@@ -178,6 +178,36 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert data["search"]["photo_urls"] == []
   end
 
+  test "a second search's volunteer cannot see the first search's remarks", %{
+    conn: conn,
+    search: search
+  } do
+    {:ok, owner2} = Accounts.get_or_provision("user_owner_vol4", %{email: "vol4@example.com"})
+
+    {:ok, other_search} =
+      Searches.create_search(owner2.id, %{
+        subject_type: "person",
+        subject_name: "Other",
+        contact_phone: "+390612345"
+      })
+
+    {:ok, _remark} =
+      FindThemApi.Remarks.create_remark(search.id, %{
+        id: Ecto.UUID.generate(),
+        kind: "hazard",
+        text: "Only for the first search",
+        reported_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    {_other_volunteer, other_token} = approved_volunteer(other_search)
+
+    conn = conn |> auth(other_token) |> get(~p"/volunteer/search")
+
+    assert %{"data" => data} = json_response(conn, 200)
+    assert data["search"]["id"] == other_search.id
+    assert data["remarks"] == []
+  end
+
   test "GET /volunteer/search reports my_segment_ids scoped to the requesting volunteer only", %{
     conn: conn,
     search: search

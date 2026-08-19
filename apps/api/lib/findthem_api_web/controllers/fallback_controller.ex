@@ -9,6 +9,16 @@ defmodule FindThemApiWeb.FallbackController do
     |> render(:error, changeset: changeset)
   end
 
+  # A client-supplied id (remarks/messages, both replay-safe via
+  # on_conflict: :nothing) already belongs to a different search — not
+  # this request's to read or rebroadcast. See Remarks/Messages'
+  # reload_and_broadcast/3.
+  def call(conn, {:error, :id_belongs_to_another_search}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{errors: %{id: ["already in use"]}})
+  end
+
   def call(conn, {:error, :not_found}) do
     conn
     |> put_status(:not_found)

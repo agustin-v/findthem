@@ -74,10 +74,25 @@ defmodule FindThemApi.Remarks do
   # content to every joined client, indistinguishable from a real remark.
   # Re-fetching the row we actually have guarantees the broadcast (and the
   # HTTP response) always reflect the database, not the request.
+  #
+  # Scoped by search_id, not just Repo.get! by id alone — the id is
+  # client-supplied, and on_conflict: :nothing means posting an id that
+  # already exists *in a different search* writes nothing but still
+  # matched a real row. An unscoped reload would return and broadcast
+  # that other search's remark content into the attacker's own search —
+  # confirmed exploitable once GET /volunteer/search (this same story)
+  # started shipping every remark id on a search to every volunteer on
+  # it, giving an attacker id values to replay after their own access to
+  # the original search ends.
   defp reload_and_broadcast({:ok, %Remark{id: id}}, search_id, event) do
-    remark = Repo.get!(Remark, id)
-    Phoenix.PubSub.broadcast(FindThemApi.PubSub, "search:#{search_id}", {event, remark})
-    {:ok, remark}
+    case Repo.get_by(Remark, id: id, search_id: search_id) do
+      nil ->
+        {:error, :id_belongs_to_another_search}
+
+      remark ->
+        Phoenix.PubSub.broadcast(FindThemApi.PubSub, "search:#{search_id}", {event, remark})
+        {:ok, remark}
+    end
   end
 
   defp reload_and_broadcast(error, _search_id, _event), do: error

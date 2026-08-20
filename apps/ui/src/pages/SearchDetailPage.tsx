@@ -409,6 +409,12 @@ export function SearchDetailPage() {
                 {selectedSegmentId != null && (
                   <div className="pointer-events-auto absolute bottom-4 right-4 w-72">
                     <SegmentAssignmentPanel
+                      // Remounts on a segment switch — without this, clicking
+                      // a different segment while the panel is already open
+                      // reuses the same instance, carrying over the previous
+                      // segment's pre-filled/typed lock volunteer and reason
+                      // as if freshly chosen for the new one.
+                      key={selectedSegmentId}
                       searchId={searchId}
                       segmentId={selectedSegmentId}
                       volunteers={volunteers}

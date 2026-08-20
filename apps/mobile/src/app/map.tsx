@@ -267,8 +267,13 @@ export default function MapScreen() {
   // the periodic poll below re-fetches them well within that window, but
   // this manual trigger needs to as well or it'd be the one path that
   // still goes stale over a long session).
+  // Returns the freshly-fetched segments (or undefined on failure) so a
+  // caller that also has an open bottom sheet (see the 409-locked branch of
+  // handleSetSegmentStatus below) can sync selectedSegment too — this
+  // function only ever updates the top-level segments array/map layer
+  // itself, which the sheet does NOT read from.
   const refreshSegments = useCallback(async () => {
-    if (!token) return;
+    if (!token) return undefined;
     try {
       const data = await getVolunteerSearch(token);
       setSearch(data.search);
@@ -277,6 +282,7 @@ export default function MapScreen() {
       setMySegmentIds(data.mySegmentIds);
       setRemarks(data.remarks);
       setConsentLocation(data.consentLocation);
+      return data.segments;
     } catch (error) {
       if (isAuthError(error)) {
         await clearVolunteerToken();
@@ -284,6 +290,7 @@ export default function MapScreen() {
         resetChatReadState();
         setScreenState('expired');
       }
+      return undefined;
     }
   }, [token]);
 
@@ -456,7 +463,16 @@ export default function MapScreen() {
       // instead of the volunteer retrying the same blocked action.
       if (error instanceof ApiError && error.status === 409 && error.errors?.segment) {
         setSegmentActionError('This segment is locked for another volunteer right now.');
-        refreshSegments();
+        // refreshSegments() alone only updates the top-level segments array
+        // (and the map's own layer) — the still-open sheet reads from
+        // selectedSegment, a separate piece of state, so without explicitly
+        // syncing it here the locked notice/disabled buttons would never
+        // actually catch up and the volunteer could just keep retrying the
+        // same blocked action.
+        refreshSegments().then((freshSegments) => {
+          const fresh = freshSegments?.find((s) => s.segmentId === selectedSegment.segmentId);
+          if (fresh) setSelectedSegment(fresh);
+        });
       } else {
         setSegmentActionError('Could not update this segment. Please try again.');
       }

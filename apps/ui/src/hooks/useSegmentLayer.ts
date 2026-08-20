@@ -163,6 +163,12 @@ export function useSegmentLayer({ map, geojson, statusBySegmentId, onSegmentClic
       },
     })
 
+    // text-font explicit rather than left to MapLibre's own default — an
+    // emoji glyph specifically (unlike ordinary Latin text) is not
+    // guaranteed to exist in every style's glyph range, so this only ever
+    // adds information; if the glyph doesn't render in a given style, the
+    // dashed segments-lock-line layer above and CoverageWidget's "Locked"
+    // aggregate count are the load-bearing indicators, not this one.
     map.addLayer({
       id: LOCK_ICON_LAYER_ID,
       type: 'symbol',
@@ -170,6 +176,7 @@ export function useSegmentLayer({ map, geojson, statusBySegmentId, onSegmentClic
       filter: ['==', ['get', 'locked'], true],
       layout: {
         'text-field': '🔒',
+        'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
         'text-size': 14,
         'text-allow-overlap': true,
         'text-ignore-placement': true,

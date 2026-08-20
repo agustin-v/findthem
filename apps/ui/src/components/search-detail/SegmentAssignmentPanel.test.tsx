@@ -3,6 +3,32 @@ import userEvent from '@testing-library/user-event'
 import { SegmentAssignmentPanel } from './SegmentAssignmentPanel'
 import type { SegmentStatusEntry, Volunteer } from '@/lib/api'
 
+// Mirrors how SearchDetailPage actually renders the panel — keyed by
+// segmentId so switching segments remounts it. Rendering
+// SegmentAssignmentPanel directly (no key) wouldn't exercise the bug this
+// regression test targets, since a fresh RTL render always mounts fresh.
+function SwitchableSegmentPanel({
+  segmentId,
+  volunteers,
+  segmentStatus,
+}: {
+  segmentId: number
+  volunteers: Volunteer[]
+  segmentStatus: SegmentStatusEntry | undefined
+}) {
+  return (
+    <SegmentAssignmentPanel
+      key={segmentId}
+      searchId="search-1"
+      segmentId={segmentId}
+      volunteers={volunteers}
+      assignments={[]}
+      segmentStatus={segmentStatus}
+      onClose={vi.fn()}
+    />
+  )
+}
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
@@ -153,6 +179,36 @@ describe('SegmentAssignmentPanel — locking', () => {
 
     expect(screen.getByText('detail.assignment.lock.lockedGeneric')).toBeInTheDocument()
     expect(screen.getByText('detail.assignment.lock.reasonNone')).toBeInTheDocument()
+  })
+
+  it('resets the lock picker when switching to a different, keyed segment', async () => {
+    const user = userEvent.setup()
+    const giulia = volunteer({ id: 'vol-1', name: 'Giulia' })
+    const { rerender } = render(
+      <SwitchableSegmentPanel
+        segmentId={3}
+        volunteers={[giulia]}
+        segmentStatus={unlockedSegment({ segmentId: 3, searchedByVolunteerId: 'vol-1' })}
+      />,
+    )
+    // Segment 3 pre-fills from its own searched_by_volunteer_id.
+    expect(screen.getByText('detail.assignment.lock.lockButton')).not.toBeDisabled()
+
+    // Switching to segment 4 (no suggestion) must remount, not carry over
+    // segment 3's picked volunteer — regression for the bug an adversarial
+    // review caught: submitting a lock for a volunteer never chosen for
+    // the segment actually being locked.
+    rerender(
+      <SwitchableSegmentPanel
+        segmentId={4}
+        volunteers={[giulia]}
+        segmentStatus={unlockedSegment({ segmentId: 4, searchedByVolunteerId: null })}
+      />,
+    )
+    expect(screen.getByText('detail.assignment.lock.lockButton')).toBeDisabled()
+
+    await user.click(screen.getByText('detail.assignment.lock.lockButton'))
+    expect(mockLock).not.toHaveBeenCalled()
   })
 
   it('shows the lock action-failed message when the lock mutation errors', () => {

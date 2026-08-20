@@ -22,7 +22,8 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
-      ]
+      ],
+      "allowBackup": false
     },
     "web": {
       "output": "single",
@@ -44,6 +45,12 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "FindThem uses your location to log accurate reports while you're helping with a search, and only while the app is open."
+        }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
         }
       ]
     ],

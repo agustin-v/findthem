@@ -18,6 +18,7 @@ import {
   type ResourceType,
 } from '@/lib/api';
 import { resetChatReadState } from '@/lib/chat-read-state';
+import { resetOfflineStore } from '@/lib/offline-cache';
 import { resetSocket } from '@/lib/socket';
 import { saveVolunteerToken } from '@/lib/token';
 
@@ -95,6 +96,12 @@ export default function JoinConsentScreen() {
         consentLocation,
         consentPhone,
       });
+      // Before saveVolunteerToken, not after — a crash between the two
+      // must never leave the OLD cache paired with a NEW token, which
+      // would let this volunteer's first cache-first render (map.tsx) show
+      // a completely unrelated search's cached subject/segments/remarks
+      // until the next live fetch overwrites it.
+      await resetOfflineStore();
       await saveVolunteerToken(result.token);
       // This is the one site that *writes* a new identity rather than
       // clearing one — easy to miss since every other reset/reset pairing

@@ -34,13 +34,20 @@ import {
   type Message,
   type Remark,
   type VolunteerGeneration,
+  type VolunteerSearchData,
   type VolunteerSearchInfo,
   type VolunteerSegment,
 } from '@/lib/api';
 import { getLastReadAt, hydrateChatReadState, resetChatReadState } from '@/lib/chat-read-state';
+import {
+  getCachedVolunteerSearch,
+  resetOfflineStore,
+  setCachedVolunteerSearch,
+} from '@/lib/offline-cache';
 import { getSocket, resetSocket } from '@/lib/socket';
 import { getMapStyleUrl, hasApiKey } from '@/lib/tomtom';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
+import { useIsOnline } from '@/hooks/useIsOnline';
 import {
   SEGMENT_FILL_OPACITY,
   SEGMENT_LINE_OPACITY,
@@ -139,6 +146,14 @@ export default function MapScreen() {
   const [failedHeaderThumbnailUrl, setFailedHeaderThumbnailUrl] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [consentLocation, setConsentLocation] = useState(false);
+  // Non-null exactly while the screen is showing the on-disk cache instead
+  // of a live GET /volunteer/search response — cleared the moment a live
+  // fetch succeeds. Drives the "showing saved data" banner below; it's not
+  // simply tied to useIsOnline() because a live fetch that's merely slow
+  // (not truly offline) should show the same honest state while it's
+  // in flight.
+  const [cachedAt, setCachedAt] = useState<number | null>(null);
+  const isOnline = useIsOnline();
   // Starts foreground reporting once both this volunteer's own consent
   // (server-authoritative, refreshed on every poll/refresh below, not
   // assumed from the join form or read only once) and a token are known.
@@ -152,6 +167,29 @@ export default function MapScreen() {
   useLocationReporting(screenState === 'ready' ? token : null, consentLocation);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  // Shared by the initial load, the cache-first read, the background poll,
+  // and refreshSegments — one place setting the six pieces of state a
+  // GET /volunteer/search response (live or cached) fans out to.
+  const applySearchData = useCallback((data: VolunteerSearchData) => {
+    setSearch(data.search);
+    setSegments(data.segments);
+    setGeneration(data.generation);
+    setMySegmentIds(data.mySegmentIds);
+    setRemarks(data.remarks);
+    setConsentLocation(data.consentLocation);
+  }, []);
+
+  // The initial load's live fetch, the background poll, and
+  // refreshSegments (triggered by the debounced socket handler below) can
+  // all have a GET /volunteer/search in flight at once — on a slow/flaky
+  // connection, nothing guarantees the initial load's own fetch resolves
+  // first. Without this, a later-triggered-but-faster-resolving refresh
+  // could get silently overwritten (both in React state AND the on-disk
+  // cache) by the initial load's slower, now-stale response arriving
+  // after it. Same "sequence number, not just an in-flight flag" pattern
+  // loadMessagesSeqRef already uses in this file.
+  const searchDataSeqRef = useRef(0);
   const [messages, setMessages] = useState<Message[]>([]);
   // Bumped on focus (e.g. returning from /chat, which has just called
   // markReadUpTo) so unreadCount below recomputes against the latest
@@ -192,34 +230,63 @@ export default function MapScreen() {
       }
       if (!cancelled) setToken(storedToken);
 
+      // Cache-first: render whatever's on disk immediately, before ever
+      // touching the network — an offline app-open would otherwise show
+      // nothing but a spinner (then the retry screen), with no map, no
+      // segment list, and nothing to enqueue anything from. A live fetch
+      // is still always attempted right after and, on success, silently
+      // replaces this with fresh data.
+      const cached = await getCachedVolunteerSearch(storedToken);
+      if (cancelled) return;
+      if (cached) {
+        applySearchData(cached.data);
+        setCachedAt(cached.cachedAt);
+        setScreenState('ready');
+      }
+
+      const seq = ++searchDataSeqRef.current;
       try {
         const data = await getVolunteerSearch(storedToken);
         if (cancelled) return;
-        setSearch(data.search);
-        setSegments(data.segments);
-        setGeneration(data.generation);
-        setMySegmentIds(data.mySegmentIds);
-        setRemarks(data.remarks);
-        setConsentLocation(data.consentLocation);
+        if (seq !== searchDataSeqRef.current) return;
+        applySearchData(data);
+        setCachedAt(null);
         setScreenState('ready');
         loadMessages(storedToken);
+        setCachedVolunteerSearch(storedToken, data);
       } catch (error) {
         if (cancelled) return;
         if (isAuthError(error)) {
+          // A real auth error fires regardless of the seq check below — it
+          // doesn't matter whether some other, newer request already won
+          // the race, the token itself is genuinely invalid either way.
           await clearVolunteerToken();
           resetSocket();
           resetChatReadState();
+          await resetOfflineStore();
           setScreenState('expired');
-        } else {
+        } else if (seq === searchDataSeqRef.current && !cached) {
+          // Both conditions matter: no cache to fall back on (a dead end
+          // for the volunteer), AND this is still the most recent request
+          // (not a slow, since-superseded one) — without the seq check, a
+          // slow initial fetch failing *after* a faster refreshSegments()
+          // (triggered by the socket handler below) already succeeded
+          // would wrongly drop an already-showing live screen back to the
+          // retry screen.
           setScreenState('retry');
         }
+        // Else: a live fetch failure with a cache already rendered, or
+        // already superseded by a newer successful fetch, just means
+        // staying on whatever's already showing — not an error state, and
+        // not a screen that blocks the volunteer from using what they've
+        // got.
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [router, reloadKey, loadMessages]);
+  }, [router, reloadKey, loadMessages, applySearchData]);
 
   // Background refresh so a volunteer sees other volunteers' progress
   // without manually reloading. Silent on transient failures — this is a
@@ -235,29 +302,33 @@ export default function MapScreen() {
     const interval = setInterval(async () => {
       if (inFlight) return;
       inFlight = true;
+      const seq = ++searchDataSeqRef.current;
       try {
         const data = await getVolunteerSearch(token);
-        setSearch(data.search);
-        setSegments(data.segments);
-        setGeneration(data.generation);
-        setMySegmentIds(data.mySegmentIds);
-        setRemarks(data.remarks);
-        setConsentLocation(data.consentLocation);
+        if (seq !== searchDataSeqRef.current) return;
+        applySearchData(data);
+        setCachedAt(null);
         await loadMessages(token);
+        setCachedVolunteerSearch(token, data);
       } catch (error) {
         if (isAuthError(error)) {
           await clearVolunteerToken();
           resetSocket();
           resetChatReadState();
+          await resetOfflineStore();
           setScreenState('expired');
         }
+        // Any other failure (offline, timeout, 5xx) is silent here by
+        // design — this is a background nice-to-have refresh, not the
+        // primary load, and whatever's currently on screen (live or
+        // cached) just stays put until the next successful tick.
       } finally {
         inFlight = false;
       }
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [screenState, token, loadMessages]);
+  }, [screenState, token, loadMessages, applySearchData]);
 
   // A lighter-weight alternative to `reload` for callers that only need
   // fresh data (e.g. after posting a remark) — unlike `reload`, this
@@ -274,25 +345,30 @@ export default function MapScreen() {
   // itself, which the sheet does NOT read from.
   const refreshSegments = useCallback(async () => {
     if (!token) return undefined;
+    const seq = ++searchDataSeqRef.current;
     try {
       const data = await getVolunteerSearch(token);
-      setSearch(data.search);
-      setSegments(data.segments);
-      setGeneration(data.generation);
-      setMySegmentIds(data.mySegmentIds);
-      setRemarks(data.remarks);
-      setConsentLocation(data.consentLocation);
+      if (seq === searchDataSeqRef.current) {
+        applySearchData(data);
+        setCachedAt(null);
+        setCachedVolunteerSearch(token, data);
+      }
+      // Still returned even if superseded — the caller (e.g. the 409-locked
+      // branch of handleSetSegmentStatus) uses this to sync selectedSegment
+      // specifically, a narrower concern than the shared search/segments
+      // state above.
       return data.segments;
     } catch (error) {
       if (isAuthError(error)) {
         await clearVolunteerToken();
         resetSocket();
         resetChatReadState();
+        await resetOfflineStore();
         setScreenState('expired');
       }
       return undefined;
     }
-  }, [token]);
+  }, [token, applySearchData]);
 
   // Same FindThemApiWeb.SearchChannel apps/ui subscribes to — joining
   // requires an already-approved volunteer (UserSocket re-checks status on
@@ -642,6 +718,16 @@ export default function MapScreen() {
           </Pressable>
         </ThemedView>
 
+        {cachedAt != null && (
+          <ThemedView style={styles.cacheBanner} type="backgroundElement">
+            <ThemedText type="small" themeColor="textSecondary">
+              {isOnline
+                ? `Showing saved data from ${formatElapsed(new Date(cachedAt).toISOString())} ago — updating…`
+                : `You're offline. Showing saved data from ${formatElapsed(new Date(cachedAt).toISOString())} ago.`}
+            </ThemedText>
+          </ThemedView>
+        )}
+
         {messages.length > 0 && (
           <Pressable
             accessibilityRole="button"
@@ -971,6 +1057,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: Radius.chip,
+  },
+  cacheBanner: {
+    marginTop: Spacing.two,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+    alignSelf: 'flex-start',
   },
   headerInfo: {
     flex: 1,

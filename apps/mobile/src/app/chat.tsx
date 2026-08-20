@@ -30,6 +30,7 @@ import {
   type Message,
 } from '@/lib/api';
 import { markReadUpTo, resetChatReadState } from '@/lib/chat-read-state';
+import { resetOfflineStore } from '@/lib/offline-cache';
 import { getSocket, resetSocket } from '@/lib/socket';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 
@@ -95,6 +96,7 @@ export default function ChatScreen() {
     await clearVolunteerToken();
     resetSocket();
     resetChatReadState();
+    await resetOfflineStore();
     // dismissAll() first so a dead-token map.tsx isn't left one back-swipe
     // away — replace() alone only swaps the top of the stack.
     router.dismissAll();

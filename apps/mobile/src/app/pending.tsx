@@ -11,6 +11,7 @@ import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getVolunteerSearch, getVolunteerSession, isAuthError } from '@/lib/api';
 import { resetChatReadState } from '@/lib/chat-read-state';
+import { resetOfflineStore } from '@/lib/offline-cache';
 import { resetSocket } from '@/lib/socket';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 
@@ -88,6 +89,7 @@ export default function PendingScreen() {
             await clearVolunteerToken();
             resetSocket();
             resetChatReadState();
+            await resetOfflineStore();
             setExpired(true);
           } else {
             setConnectionTrouble(true);
@@ -111,6 +113,7 @@ export default function PendingScreen() {
     await clearVolunteerToken();
     resetSocket();
     resetChatReadState();
+    await resetOfflineStore();
     router.replace('/');
   };
 

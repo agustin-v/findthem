@@ -23,6 +23,7 @@ import { SubjectPhotoModal } from '@/components/subject-photo-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
+import { useLocationReporting } from '@/hooks/useLocationReporting';
 import { useTheme } from '@/hooks/use-theme';
 import {
   getVolunteerMessages,
@@ -132,6 +133,18 @@ export default function MapScreen() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [failedHeaderThumbnailUrl, setFailedHeaderThumbnailUrl] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [consentLocation, setConsentLocation] = useState(false);
+  // Starts foreground reporting once both this volunteer's own consent
+  // (server-authoritative, refreshed on every poll/refresh below, not
+  // assumed from the join form or read only once) and a token are known.
+  // Passing null instead of the real token once screenState leaves 'ready'
+  // (removed, expired session, a failed reload) is deliberate, not
+  // redundant with useLocationReporting's own !token check — token itself
+  // stays a valid, unexpired string in that state (nothing clears it),
+  // so without this the GPS watch would keep running and POSTing against
+  // a search the volunteer no longer has access to until they manually
+  // navigate away.
+  useLocationReporting(screenState === 'ready' ? token : null, consentLocation);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -182,6 +195,7 @@ export default function MapScreen() {
         setGeneration(data.generation);
         setMySegmentIds(data.mySegmentIds);
         setRemarks(data.remarks);
+        setConsentLocation(data.consentLocation);
         setScreenState('ready');
         loadMessages(storedToken);
       } catch (error) {
@@ -223,6 +237,7 @@ export default function MapScreen() {
         setGeneration(data.generation);
         setMySegmentIds(data.mySegmentIds);
         setRemarks(data.remarks);
+        setConsentLocation(data.consentLocation);
         await loadMessages(token);
       } catch (error) {
         if (isAuthError(error)) {
@@ -256,6 +271,7 @@ export default function MapScreen() {
       setGeneration(data.generation);
       setMySegmentIds(data.mySegmentIds);
       setRemarks(data.remarks);
+      setConsentLocation(data.consentLocation);
     } catch (error) {
       if (isAuthError(error)) {
         await clearVolunteerToken();

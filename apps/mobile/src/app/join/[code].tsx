@@ -101,9 +101,17 @@ export default function JoinConsentScreen() {
       // in this app sits next to a clearVolunteerToken() call instead. A
       // device re-joining as a different volunteer (e.g. a shared/passed-
       // around phone) without this would keep the previous volunteer's
-      // socket connection and unread-message read marker.
+      // socket connection and unread-message read marker — and, per
+      // useLocationReporting, its GPS watch: a plain replace() only swaps
+      // the current screen, same reasoning as chat.tsx's own
+      // handleAuthExpired dismissAll()+replace() — without dismissAll()
+      // first, a /map screen mounted underneath (e.g. this device was
+      // already an approved volunteer when a *different* person opened
+      // this join link on it) stays alive with the previous volunteer's
+      // still-valid token, continuing to report their real position.
       resetSocket();
       resetChatReadState();
+      router.dismissAll();
       router.replace('/pending');
     } catch (error) {
       setSubmitError(

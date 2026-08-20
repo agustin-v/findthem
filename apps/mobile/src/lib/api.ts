@@ -174,6 +174,11 @@ export interface VolunteerSearchData {
   // a shared map-annotation board (Story 37), not just this volunteer's
   // own. map.tsx only renders the ones with a lat/lng.
   remarks: Remark[];
+  // This volunteer's own consent — the server-authoritative source Story
+  // 40's foreground location reporting gates on. POST /join's form
+  // requires all three consents client-side today, but that's a client
+  // policy, not a server guarantee, so this is checked rather than assumed.
+  consentLocation: boolean;
 }
 
 interface RemoteSegment {
@@ -206,6 +211,7 @@ interface RemoteVolunteerSearchData {
   generation: RemoteGeneration | null;
   my_segment_ids: number[];
   remarks: RemoteRemark[];
+  consent_location: boolean;
 }
 
 function mapVolunteerSegment(segment: RemoteSegment): VolunteerSegment {
@@ -239,6 +245,7 @@ export async function getVolunteerSearch(token: string): Promise<VolunteerSearch
     generation: data.generation ? { segments: data.generation.response.segments } : null,
     mySegmentIds: data.my_segment_ids,
     remarks: data.remarks?.map(mapRemark) ?? [],
+    consentLocation: data.consent_location ?? false,
   };
 }
 
@@ -322,6 +329,29 @@ export async function createRemark(token: string, payload: RemarkPayload): Promi
   });
 
   return mapRemark(data);
+}
+
+export interface LocationPingPayload {
+  lat: number;
+  lng: number;
+  recordedAt: string;
+}
+
+// Fire-and-forget from the caller's perspective (useLocationReporting
+// swallows every rejection — a dropped ping isn't worth surfacing to the
+// volunteer, and the next one is only ~15m/60s away) — but this function
+// itself still surfaces the real error/status rather than hiding it, so a
+// caller that DOES want to react (or a test) isn't stuck guessing.
+export async function reportLocation(token: string, payload: LocationPingPayload): Promise<void> {
+  await request('/volunteer/location', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      lat: payload.lat,
+      lng: payload.lng,
+      recorded_at: payload.recordedAt,
+    }),
+  });
 }
 
 export type MessageSender = 'coordinator' | 'volunteer';

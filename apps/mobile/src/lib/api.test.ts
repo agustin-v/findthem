@@ -8,6 +8,7 @@ import {
   isAuthError,
   isNotFoundError,
   joinSearch,
+  reportLocation,
   sendVolunteerMessage,
   updateSegmentStatus,
 } from './api';
@@ -184,6 +185,7 @@ describe('getVolunteerSearch', () => {
                 reported_at: '2026-08-19T10:00:00Z',
               },
             ],
+            consent_location: true,
           },
         }),
     });
@@ -220,9 +222,42 @@ describe('getVolunteerSearch', () => {
         reportedAt: '2026-08-19T10:00:00Z',
       },
     ]);
+    expect(result.consentLocation).toBe(true);
     const [url, init] = mockFetch.mock.calls[0];
     expect(url).toContain('/volunteer/search');
     expect(init.headers.Authorization).toBe('Bearer the-token');
+  });
+
+  it('defaults consentLocation to false when the field is missing (API/mobile version skew)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            search: {
+              id: 'search-1',
+              subject_type: 'person',
+              subject_name: 'Marco Rossi',
+              subject_details: {},
+              status: 'active',
+              contact_phone: '+390612345',
+              lkp_lat: null,
+              lkp_lng: null,
+              lkp_address: null,
+              lkp_at: null,
+              photo_urls: [],
+            },
+            segments: [],
+            generation: null,
+            my_segment_ids: [],
+            // consent_location intentionally omitted
+          },
+        }),
+    });
+
+    const result = await getVolunteerSearch('the-token');
+
+    expect(result.consentLocation).toBe(false);
   });
 
   it('maps a null generation when the search has never been generated', async () => {
@@ -352,6 +387,48 @@ describe('createRemark', () => {
         reported_at: '2026-08-04T10:00:00Z',
       },
     });
+  });
+});
+
+describe('reportLocation', () => {
+  it('POSTs the ping with a bearer token and snake_case fields', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: { id: 'loc-1', volunteer_id: 'vol-1', lat: 41.9, lng: 12.5, recorded_at: '2026-08-20T10:00:00Z' },
+        }),
+    });
+
+    await reportLocation('the-token', { lat: 41.9, lng: 12.5, recordedAt: '2026-08-20T10:00:00Z' });
+
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toContain('/volunteer/location');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer the-token');
+    expect(JSON.parse(init.body)).toEqual({
+      lat: 41.9,
+      lng: 12.5,
+      recorded_at: '2026-08-20T10:00:00Z',
+    });
+  });
+
+  it('rejects with an ApiError on a 403 (consent declined server-side)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      json: () => Promise.resolve({ errors: { location: ['consent not granted'] } }),
+    });
+
+    const error = await reportLocation('the-token', {
+      lat: 41.9,
+      lng: 12.5,
+      recordedAt: '2026-08-20T10:00:00Z',
+    }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(403);
   });
 });
 

@@ -97,6 +97,27 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert data["generation"] == nil
     assert data["my_segment_ids"] == []
     assert data["remarks"] == []
+    assert data["consent_location"] == false
+  end
+
+  test "GET /volunteer/search reports this volunteer's own consent_location, true case", %{
+    conn: conn,
+    search: search
+  } do
+    {:ok, volunteer} =
+      Volunteers.join_volunteer(search.id, %{
+        name: "Giulia",
+        phone: "+390698765",
+        consent_location: true
+      })
+
+    {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
+    token = Volunteers.sign_token(FindThemApiWeb.Endpoint, approved.id)
+
+    conn = conn |> auth(token) |> get(~p"/volunteer/search")
+
+    assert %{"data" => data} = json_response(conn, 200)
+    assert data["consent_location"] == true
   end
 
   test "GET /volunteer/search includes every remark on the search, not just this volunteer's own",

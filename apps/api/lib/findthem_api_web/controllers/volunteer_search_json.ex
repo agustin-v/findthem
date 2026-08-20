@@ -10,7 +10,8 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
         segments: segments,
         generation: generation,
         my_segment_ids: my_segment_ids,
-        remarks: remarks
+        remarks: remarks,
+        consent_location: consent_location
       }) do
     %{
       data: %{
@@ -18,7 +19,15 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
         segments: Enum.map(segments, &segment_data/1),
         generation: generation_data(generation),
         my_segment_ids: my_segment_ids,
-        remarks: Enum.map(remarks, &FindThemApiWeb.RemarkJSON.remark_data/1)
+        remarks: Enum.map(remarks, &FindThemApiWeb.RemarkJSON.remark_data/1),
+        # This volunteer's own consent, not the search's — Story 40's
+        # foreground location reporting must never start if this is
+        # false, however the volunteer joined (POST /join's client-side
+        # form requires all three consents today, but that's a client
+        # policy, not a server guarantee — a different or future client
+        # could join with location consent declined while still
+        # satisfying the server's actual required fields).
+        consent_location: consent_location
       }
     }
   end

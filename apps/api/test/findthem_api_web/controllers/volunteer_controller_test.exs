@@ -19,7 +19,7 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
         lkp_address: "Via del Corso, Roma"
       })
 
-    %{search: search}
+    %{search: search, owner: owner}
   end
 
   defp approved_volunteer(search) do
@@ -276,7 +276,74 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
 
     assert %{"data" => data} = json_response(conn, 200)
     assert data["status"] == "searched"
-    assert data["searched_by_volunteer_id"] == volunteer.id
+    # The volunteer-facing PATCH response uses VolunteerSearchJSON's reduced
+    # segment shape (same as GET /volunteer/search), which never included
+    # searched_by_volunteer_id — verify the underlying row directly instead.
+    refute Map.has_key?(data, "searched_by_volunteer_id")
+    [segment] = Segments.list_by_search(search.id)
+    assert segment.searched_by_volunteer_id == volunteer.id
+  end
+
+  test "PATCH /volunteer/segments/:segment_id rejects a volunteer other than who the segment is locked for, with 409",
+       %{conn: conn, search: search, owner: owner} do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    {reserved, _reserved_token} = approved_volunteer(search)
+    {:ok, _someone_else, someone_else_token} = another_approved_volunteer(search)
+    {:ok, _} = Segments.lock(search.id, 3, owner.id, %{"locked_for_volunteer_id" => reserved.id})
+
+    conn =
+      conn
+      |> auth(someone_else_token)
+      |> patch(~p"/volunteer/segments/3", %{"status" => "searched"})
+
+    assert json_response(conn, 409)
+  end
+
+  test "PATCH /volunteer/segments/:segment_id allows the reserved volunteer's own PATCH and clears the lock",
+       %{conn: conn, search: search, owner: owner} do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    {reserved, reserved_token} = approved_volunteer(search)
+    {:ok, _} = Segments.lock(search.id, 3, owner.id, %{"locked_for_volunteer_id" => reserved.id})
+
+    conn =
+      conn
+      |> auth(reserved_token)
+      |> patch(~p"/volunteer/segments/3", %{"status" => "searched"})
+
+    assert %{"data" => data} = json_response(conn, 200)
+    assert data["status"] == "searched"
+
+    [segment] = Segments.list_by_search(search.id)
+    assert segment.locked_at == nil
+  end
+
+  test "GET /volunteer/search reports locked/locked_for_me without leaking another volunteer's id",
+       %{conn: conn, search: search, owner: owner} do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    {reserved, _reserved_token} = approved_volunteer(search)
+    {:ok, _someone_else, someone_else_token} = another_approved_volunteer(search)
+    {:ok, _} = Segments.lock(search.id, 3, owner.id, %{"locked_for_volunteer_id" => reserved.id})
+
+    conn = conn |> auth(someone_else_token) |> get(~p"/volunteer/search")
+
+    assert %{"data" => %{"segments" => [segment]}} = json_response(conn, 200)
+    assert segment["locked"] == true
+    assert segment["locked_for_me"] == false
+    refute Map.has_key?(segment, "locked_for_volunteer_id")
+    refute Map.has_key?(segment, "locked_by_user_id")
+  end
+
+  test "GET /volunteer/search reports locked_for_me: true for the volunteer the segment is reserved for",
+       %{conn: conn, search: search, owner: owner} do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    {reserved, reserved_token} = approved_volunteer(search)
+    {:ok, _} = Segments.lock(search.id, 3, owner.id, %{"locked_for_volunteer_id" => reserved.id})
+
+    conn = conn |> auth(reserved_token) |> get(~p"/volunteer/search")
+
+    assert %{"data" => %{"segments" => [segment]}} = json_response(conn, 200)
+    assert segment["locked"] == true
+    assert segment["locked_for_me"] == true
   end
 
   test "PATCH /volunteer/segments/:segment_id for a segment_id that was never generated returns 404",

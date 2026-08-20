@@ -15,7 +15,11 @@ defmodule FindThemApiWeb.SegmentJSON do
       segment_id: segment.segment_id,
       status: segment.status,
       searched_at: segment.searched_at,
-      searched_by_volunteer_id: segment.searched_by_volunteer_id
+      searched_by_volunteer_id: segment.searched_by_volunteer_id,
+      locked_at: segment.locked_at,
+      locked_by_user_id: segment.locked_by_user_id,
+      locked_for_volunteer_id: segment.locked_for_volunteer_id,
+      lock_reason: segment.lock_reason
     }
   end
 end

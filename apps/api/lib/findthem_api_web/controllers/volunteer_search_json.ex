@@ -11,12 +11,13 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
         generation: generation,
         my_segment_ids: my_segment_ids,
         remarks: remarks,
-        consent_location: consent_location
+        consent_location: consent_location,
+        volunteer_id: volunteer_id
       }) do
     %{
       data: %{
         search: search_data(search),
-        segments: Enum.map(segments, &segment_data/1),
+        segments: Enum.map(segments, &segment_data(&1, volunteer_id)),
         generation: generation_data(generation),
         my_segment_ids: my_segment_ids,
         remarks: Enum.map(remarks, &FindThemApiWeb.RemarkJSON.remark_data/1),
@@ -30,6 +31,14 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
         consent_location: consent_location
       }
     }
+  end
+
+  # For VolunteerSegmentController's own PATCH response — must render this
+  # volunteer's reduced segment shape, same as the bulk show/1 above and
+  # the channel relay, never SegmentJSON's coordinator shape
+  # (locked_by_user_id has no business reaching a volunteer device).
+  def show(%{segment: segment, volunteer_id: volunteer_id}) do
+    %{data: segment_data(segment, volunteer_id)}
   end
 
   defp search_data(search) do
@@ -50,11 +59,28 @@ defmodule FindThemApiWeb.VolunteerSearchJSON do
     }
   end
 
-  defp segment_data(segment) do
+  # Public so FindThemApiWeb.SearchChannel can shape a broadcasted
+  # %Segment{} struct the same way for a volunteer identity, instead of
+  # SegmentJSON's coordinator shape (which carries locked_by_user_id — a
+  # coordinator account id with no reason to reach a volunteer device).
+  #
+  # locked_for_me (not the raw locked_for_volunteer_id) so one volunteer's
+  # id is never handed to another volunteer's device just to answer "can I
+  # still work this" — the server answers that question directly instead.
+  def segment_data(segment, volunteer_id) do
     %{
       segment_id: segment.segment_id,
       status: segment.status,
-      searched_at: segment.searched_at
+      searched_at: segment.searched_at,
+      locked: not is_nil(segment.locked_at),
+      locked_for_me:
+        not is_nil(segment.locked_at) and segment.locked_for_volunteer_id == volunteer_id,
+      # Unlike locked_for_volunteer_id, deliberately sent to every
+      # volunteer, not only the one it's reserved for — it's coordinator
+      # free text explaining why a segment is blocked ("bridge collapsed"),
+      # and every volunteer on the search benefits from knowing why, not
+      # just the one it names.
+      lock_reason: segment.lock_reason
     }
   end
 

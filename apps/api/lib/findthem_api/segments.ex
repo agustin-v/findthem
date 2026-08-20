@@ -3,6 +3,7 @@ defmodule FindThemApi.Segments do
 
   alias FindThemApi.Repo
   alias FindThemApi.Searches.Segment
+  alias FindThemApi.Volunteers
 
   def list_by_search(search_id) do
     Segment
@@ -16,7 +17,8 @@ defmodule FindThemApi.Segments do
   # regenerates). Reusing on_conflict: :nothing here would silently carry a
   # stale "searched" status onto a same-numbered but physically different
   # segment after a regenerate, so this replaces the whole set instead:
-  # every regenerate resets segment progress for the search.
+  # every regenerate resets segment progress for the search (locks
+  # included — see lock/4's own comment).
   def seed_segments(search_id, entries) do
     Repo.delete_all(from(s in Segment, where: s.search_id == ^search_id))
 
@@ -46,32 +48,103 @@ defmodule FindThemApi.Segments do
   # only guarantees the *no matching row at all* case fails cleanly instead
   # of raising Ecto.StaleEntryError, matching the low-frequency-action
   # risk-acceptance already established for rotate_join_token/2 above.
-  def update_segment_status(search_id, segment_id, attrs, retry? \\ true) do
+  #
+  # `actor` distinguishes a volunteer's own PATCH (subject to the lock
+  # check below) from the coordinator's (never blocked by a lock — a
+  # coordinator can already unlock outright, so the lock has no reason to
+  # also block their own direct edit through the same shared function).
+  # Defaults to :volunteer, not :coordinator — the *restrictive* branch is
+  # the safe default for a security-relevant check like this one (same
+  # "unless you've deliberately checked, assume the more restrictive case"
+  # reasoning SearchChannel's own moduledoc states); both current callers
+  # already pass an explicit actor, so this only matters for whatever
+  # forgets to.
+  def update_segment_status(search_id, segment_id, attrs, opts \\ []) do
+    actor = Keyword.get(opts, :actor, :volunteer)
+
     case Repo.get_by(Segment, search_id: search_id, segment_id: segment_id) do
       nil ->
         {:error, :not_found}
 
       segment ->
-        changeset_attrs =
-          attrs
-          |> Map.new(fn {k, v} -> {to_string(k), v} end)
-          |> put_searched_at(segment)
+        attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
 
-        segment
-        |> Segment.changeset(changeset_attrs)
-        |> Repo.update()
-        |> broadcast(search_id)
+        with :ok <- check_lock(segment, actor, attrs) do
+          changeset_attrs =
+            attrs
+            |> put_searched_at(segment)
+            |> maybe_clear_lock(segment, actor, attrs)
+
+          segment
+          |> Segment.changeset(changeset_attrs)
+          |> Repo.update()
+          |> broadcast(search_id)
+        end
     end
   rescue
+    # opts (a function argument, bound before this implicit try) is what's
+    # visible here — actor/retry? derived from it inside the body above are
+    # not, that's why they're re-derived from opts again rather than reused.
     _e in Ecto.StaleEntryError ->
       # The row was deleted (regenerate) between our read and write.
       {:error, :not_found}
 
     e in Ecto.ConstraintError ->
-      if retry?,
-        do: update_segment_status(search_id, segment_id, attrs, false),
-        else: reraise(e, __STACKTRACE__)
+      if Keyword.get(opts, :retry, true) do
+        update_segment_status(search_id, segment_id, attrs, Keyword.put(opts, :retry, false))
+      else
+        reraise(e, __STACKTRACE__)
+      end
   end
+
+  # A locked segment rejects a volunteer PATCH from anyone except the
+  # volunteer it's reserved for — that volunteer's own PATCH is allowed
+  # (though it only *clears* the lock on a genuine transition into
+  # "searched" — see maybe_clear_lock/4). The coordinator's own edits are
+  # never blocked by a lock they can already remove outright via unlock/2.
+  defp check_lock(%Segment{locked_at: nil}, _actor, _attrs), do: :ok
+  defp check_lock(_segment, :coordinator, _attrs), do: :ok
+
+  defp check_lock(%Segment{locked_for_volunteer_id: volunteer_id}, :volunteer, %{
+         "searched_by_volunteer_id" => volunteer_id
+       })
+       when not is_nil(volunteer_id) do
+    :ok
+  end
+
+  defp check_lock(_segment, :volunteer, _attrs), do: {:error, :segment_locked}
+
+  # Only clears on a genuine transition into "searched" — the reserved
+  # volunteer having finished the work, not merely having sent *any*
+  # successful PATCH. Two real bugs this closes, both confirmed by review:
+  # (1) resuming to "in_progress" (the natural first tap after
+  # reconnecting) used to release the lock two steps before the work was
+  # actually done, reopening the exact duplicate-work window the lock
+  # exists to close; (2) an empty-body PATCH ({} — Map.take(params,
+  # ["status"]) yields that when no status is sent) used to let the
+  # reserved volunteer dissolve a coordinator's lock — including one they
+  # were never meant to hold, see lock/4's own comment on why
+  # locked_for_volunteer_id is never inferred from this same volunteer's
+  # own searched_by_volunteer_id — without making any real change at all.
+  defp maybe_clear_lock(changeset_attrs, %Segment{locked_at: nil}, _actor, _attrs),
+    do: changeset_attrs
+
+  defp maybe_clear_lock(
+         changeset_attrs,
+         %Segment{locked_for_volunteer_id: volunteer_id},
+         :volunteer,
+         %{"searched_by_volunteer_id" => volunteer_id, "status" => "searched"}
+       )
+       when not is_nil(volunteer_id) do
+    Map.merge(changeset_attrs, %{
+      "locked_at" => nil,
+      "locked_by_user_id" => nil,
+      "locked_for_volunteer_id" => nil,
+      "lock_reason" => nil
+    })
+  end
+
+  defp maybe_clear_lock(changeset_attrs, _segment, _actor, _attrs), do: changeset_attrs
 
   # Sticky: searched_at is set once on the transition into "searched" and
   # left alone on repeat PATCHes with the same status.
@@ -91,6 +164,87 @@ defmodule FindThemApi.Segments do
     do: Map.put(attrs, "searched_at", nil)
 
   defp put_searched_at(attrs, _segment), do: attrs
+
+  # Coordinator-only (enforced by the caller — SegmentController scopes via
+  # Searches.get_search_for_owner/2 the same as update_segment_status/3's
+  # coordinator path; there is no volunteer-facing route to this
+  # function). Update-only, same shape as update_segment_status/3 — a
+  # lock references a row seed_segments/2 already created, there's
+  # nothing to create here.
+  #
+  # locked_for_volunteer_id is REQUIRED, never inferred from the segment's
+  # own searched_by_volunteer_id. It's tempting to default it (the common
+  # case really is "lock the segment the currently-working volunteer is
+  # on") but searched_by_volunteer_id is volunteer-writable — any approved
+  # volunteer can set it just by PATCHing the segment to any status at
+  # all. An implicit default sourced from it would let a volunteer make
+  # THEMSELVES the reservee of a future lock they were never meant to
+  # hold (by touching the segment first), and then dissolve that lock
+  # with their own next PATCH — silently defeating a coordinator's hazard
+  # lock. A UI can still pre-fill a suggested volunteer for the
+  # coordinator to confirm; the backend requires an explicit, deliberate
+  # choice either way.
+  def lock(search_id, segment_id, locked_by_user_id, attrs \\ %{}) do
+    attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
+
+    case Repo.get_by(Segment, search_id: search_id, segment_id: segment_id) do
+      nil ->
+        {:error, :not_found}
+
+      segment ->
+        with {:ok, locked_for_volunteer_id} <- require_locked_for(attrs),
+             :ok <- validate_volunteer_in_search(locked_for_volunteer_id, search_id) do
+          segment
+          |> Segment.changeset(%{
+            "locked_at" => DateTime.utc_now() |> DateTime.truncate(:second),
+            "locked_by_user_id" => locked_by_user_id,
+            "locked_for_volunteer_id" => locked_for_volunteer_id,
+            "lock_reason" => Map.get(attrs, "lock_reason")
+          })
+          |> Repo.update()
+          |> broadcast(search_id)
+        end
+    end
+  rescue
+    _e in Ecto.StaleEntryError -> {:error, :not_found}
+  end
+
+  defp require_locked_for(%{"locked_for_volunteer_id" => id}) when is_binary(id) and id != "",
+    do: {:ok, id}
+
+  defp require_locked_for(_attrs), do: {:error, :volunteer_required}
+
+  def unlock(search_id, segment_id) do
+    case Repo.get_by(Segment, search_id: search_id, segment_id: segment_id) do
+      nil ->
+        {:error, :not_found}
+
+      segment ->
+        segment
+        |> Segment.changeset(%{
+          "locked_at" => nil,
+          "locked_by_user_id" => nil,
+          "locked_for_volunteer_id" => nil,
+          "lock_reason" => nil
+        })
+        |> Repo.update()
+        |> broadcast(search_id)
+    end
+  rescue
+    _e in Ecto.StaleEntryError -> {:error, :not_found}
+  end
+
+  # Same "must be a real, currently-working resource" bar SegmentAssignments.
+  # assign/3 already applies — a pending/removed volunteer isn't one, and a
+  # volunteer_id from a different search must not be reachable through a
+  # foreign search_id (mirrors get_volunteer_in_search's own scoping).
+  defp validate_volunteer_in_search(volunteer_id, search_id) do
+    case Volunteers.get_volunteer_in_search(search_id, volunteer_id) do
+      {:ok, %{status: "approved"}} -> :ok
+      {:ok, %{status: _other}} -> {:error, :volunteer_not_approved}
+      {:error, :not_found} -> {:error, :volunteer_not_approved}
+    end
+  end
 
   defp broadcast({:ok, %Segment{} = segment} = result, search_id) do
     Phoenix.PubSub.broadcast(

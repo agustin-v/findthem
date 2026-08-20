@@ -16,7 +16,34 @@ defmodule FindThemApiWeb.SegmentController do
     with {:ok, segment_id} <- parse_segment_id(segment_id_param),
          {:ok, _search} <- Searches.get_search_for_owner(conn.assigns.current_user.id, search_id),
          {:ok, segment} <-
-           Segments.update_segment_status(search_id, segment_id, Map.take(params, ["status"])) do
+           Segments.update_segment_status(
+             search_id,
+             segment_id,
+             Map.take(params, ["status"]),
+             actor: :coordinator
+           ) do
+      render(conn, :show, segment: segment)
+    end
+  end
+
+  def lock(conn, %{"search_id" => search_id, "segment_id" => segment_id_param} = params) do
+    with {:ok, segment_id} <- parse_segment_id(segment_id_param),
+         {:ok, _search} <- Searches.get_search_for_owner(conn.assigns.current_user.id, search_id),
+         {:ok, segment} <-
+           Segments.lock(
+             search_id,
+             segment_id,
+             conn.assigns.current_user.id,
+             Map.take(params, ["locked_for_volunteer_id", "lock_reason"])
+           ) do
+      render(conn, :show, segment: segment)
+    end
+  end
+
+  def unlock(conn, %{"search_id" => search_id, "segment_id" => segment_id_param}) do
+    with {:ok, segment_id} <- parse_segment_id(segment_id_param),
+         {:ok, _search} <- Searches.get_search_for_owner(conn.assigns.current_user.id, search_id),
+         {:ok, segment} <- Segments.unlock(search_id, segment_id) do
       render(conn, :show, segment: segment)
     end
   end

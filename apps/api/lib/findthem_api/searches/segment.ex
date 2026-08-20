@@ -15,6 +15,11 @@ defmodule FindThemApi.Searches.Segment do
 
     field :searched_at, :utc_datetime
     belongs_to :searched_by_volunteer, FindThemApi.Volunteers.Volunteer
+
+    field :locked_at, :utc_datetime
+    belongs_to :locked_by_user, FindThemApi.Accounts.User
+    belongs_to :locked_for_volunteer, FindThemApi.Volunteers.Volunteer
+    field :lock_reason, :string
   end
 
   def changeset(segment, attrs) do
@@ -24,11 +29,22 @@ defmodule FindThemApi.Searches.Segment do
       :segment_id,
       :status,
       :searched_at,
-      :searched_by_volunteer_id
+      :searched_by_volunteer_id,
+      :locked_at,
+      :locked_by_user_id,
+      :locked_for_volunteer_id,
+      :lock_reason
     ])
     |> validate_required([:search_id, :segment_id])
     |> validate_inclusion(:status, @statuses)
+    # count: :codepoints, not the default :graphemes — same reasoning as
+    # Remark/Message's own free-text fields: varchar(255) bounds by
+    # codepoint, and a grapheme-counted check can pass a string that still
+    # overflows the column (see Message.changeset's family-emoji repro).
+    |> validate_length(:lock_reason, max: 255, count: :codepoints)
     |> foreign_key_constraint(:search_id)
     |> foreign_key_constraint(:searched_by_volunteer_id)
+    |> foreign_key_constraint(:locked_by_user_id)
+    |> foreign_key_constraint(:locked_for_volunteer_id)
   end
 end

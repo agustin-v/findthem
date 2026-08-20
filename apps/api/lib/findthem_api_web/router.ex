@@ -71,6 +71,8 @@ defmodule FindThemApiWeb.Router do
 
     resources "/searches", SearchController, only: [:index, :show, :create] do
       resources "/segments", SegmentController, only: [:index, :update], param: "segment_id"
+      post "/segments/:segment_id/lock", SegmentController, :lock
+      post "/segments/:segment_id/unlock", SegmentController, :unlock
       get "/segment_assignments", SegmentAssignmentController, :index
       post "/segment_assignments", SegmentAssignmentController, :create
 

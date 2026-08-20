@@ -25,6 +25,23 @@ defmodule FindThemApiWeb.FallbackController do
     |> json(%{errors: %{location: ["consent not granted"]}})
   end
 
+  # Only reachable for a volunteer's own status PATCH — the coordinator's
+  # equivalent action is never blocked by a lock (see
+  # Segments.update_segment_status/3's actor-aware check).
+  def call(conn, {:error, :segment_locked}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{errors: %{segment: ["locked"]}})
+  end
+
+  # Segments.lock/4 requires an explicit locked_for_volunteer_id — see its
+  # own comment on why this is never inferred server-side.
+  def call(conn, {:error, :volunteer_required}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{locked_for_volunteer_id: ["is required"]}})
+  end
+
   def call(conn, {:error, :not_found}) do
     conn
     |> put_status(:not_found)

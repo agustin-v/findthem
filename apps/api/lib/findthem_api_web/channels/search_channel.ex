@@ -111,8 +111,31 @@ defmodule FindThemApiWeb.SearchChannel do
     {:noreply, socket}
   end
 
+  # Identity-aware shaping, not a blanket relay like the old (pre-locking)
+  # version of this clause — SegmentJSON's coordinator shape now carries
+  # locked_by_user_id, a coordinator account id with no reason to reach a
+  # volunteer device. A volunteer gets VolunteerSearchJSON's reduced shape
+  # instead (boolean locked/locked_for_me, never a raw user or volunteer id
+  # belonging to someone else).
   def handle_info({event, %FindThemApi.Searches.Segment{} = segment}, socket) do
-    push(socket, to_string(event), %{data: FindThemApiWeb.SegmentJSON.segment_data(segment)})
+    case socket.assigns.identity do
+      {:coordinator, _user} ->
+        push(socket, to_string(event), %{data: FindThemApiWeb.SegmentJSON.segment_data(segment)})
+
+      {:volunteer, volunteer} ->
+        push(socket, to_string(event), %{
+          data: FindThemApiWeb.VolunteerSearchJSON.segment_data(segment, volunteer.id)
+        })
+
+      # Not reachable today — UserSocket.connect/3 only ever assigns one of
+      # the two shapes above — but this module's own stated contract
+      # (moduledoc) is that an unmatched shape drops the push and logs
+      # rather than crashing the channel process, same as the catch-all
+      # handle_info/2 at the bottom of this file.
+      other ->
+        Logger.debug("SearchChannel: unhandled identity for segment_updated #{inspect(other)}")
+    end
+
     {:noreply, socket}
   end
 

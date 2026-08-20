@@ -1,7 +1,7 @@
 defmodule FindThemApiWeb.SearchChannelTest do
   use FindThemApiWeb.ChannelCase, async: false
 
-  alias FindThemApi.{Accounts, Locations, Messages, Remarks, Searches, Volunteers}
+  alias FindThemApi.{Accounts, Locations, Messages, Remarks, Searches, Segments, Volunteers}
   alias FindThemApi.ClerkFixtures
   alias FindThemApiWeb.UserSocket
 
@@ -267,6 +267,57 @@ defmodule FindThemApiWeb.SearchChannelTest do
     })
 
     refute_push "location_updated", %{}
+    _ = socket
+  end
+
+  # Regression: this relay used to be a blanket push of SegmentJSON's
+  # coordinator shape to every joined identity — fine until locking added
+  # locked_by_user_id (a coordinator account id) to that shape. The
+  # coordinator still gets it in full; a volunteer must get
+  # VolunteerSearchJSON's reduced shape instead.
+  test "relays a segment_updated broadcast to a joined coordinator with the full lock shape", %{
+    owner: owner,
+    search: search
+  } do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    {volunteer, _token} = approved_volunteer(search)
+
+    socket = connect_coordinator(owner)
+    {:ok, _reply, socket} = subscribe_and_join(socket, "search:#{search.id}", %{})
+
+    {:ok, _} =
+      Segments.lock(search.id, 3, owner.id, %{
+        "locked_for_volunteer_id" => volunteer.id,
+        "lock_reason" => "offline"
+      })
+
+    assert_push "segment_updated", %{data: data}
+    assert data.locked_by_user_id == owner.id
+    assert data.locked_for_volunteer_id == volunteer.id
+    assert data.lock_reason == "offline"
+    _ = socket
+  end
+
+  test "relays a segment_updated broadcast to a joined volunteer with a reduced, non-leaking shape",
+       %{owner: owner, search: search} do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    {volunteer, token} = approved_volunteer(search)
+    {:ok, socket} = connect(UserSocket, %{"token" => token})
+    {:ok, _reply, socket} = subscribe_and_join(socket, "search:#{search.id}", %{})
+
+    {:ok, _} =
+      Segments.lock(search.id, 3, owner.id, %{
+        "locked_for_volunteer_id" => volunteer.id,
+        "lock_reason" => "offline"
+      })
+
+    assert_push "segment_updated", %{data: data}
+    assert data.locked == true
+    assert data.locked_for_me == true
+    assert data.lock_reason == "offline"
+    refute Map.has_key?(data, :locked_by_user_id)
+    refute Map.has_key?(data, :locked_for_volunteer_id)
+    refute Map.has_key?(data, :searched_by_volunteer_id)
     _ = socket
   end
 

@@ -14,10 +14,13 @@ defmodule FindThemApiWeb.VolunteerSegmentController do
         |> Map.take(["status"])
         |> Map.put("searched_by_volunteer_id", volunteer.id)
 
-      with {:ok, segment} <- Segments.update_segment_status(volunteer.search_id, segment_id, attrs) do
+      with {:ok, segment} <-
+             Segments.update_segment_status(volunteer.search_id, segment_id, attrs,
+               actor: :volunteer
+             ) do
         conn
-        |> put_view(json: FindThemApiWeb.SegmentJSON)
-        |> render(:show, segment: segment)
+        |> put_view(json: FindThemApiWeb.VolunteerSearchJSON)
+        |> render(:show, segment: segment, volunteer_id: volunteer.id)
       end
     end
   end

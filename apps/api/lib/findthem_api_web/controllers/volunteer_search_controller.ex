@@ -27,7 +27,8 @@ defmodule FindThemApiWeb.VolunteerSearchController do
         generation: generation,
         my_segment_ids: my_segment_ids,
         remarks: remarks,
-        consent_location: volunteer.consent_location
+        consent_location: volunteer.consent_location,
+        volunteer_id: volunteer.id
       )
     end
   end

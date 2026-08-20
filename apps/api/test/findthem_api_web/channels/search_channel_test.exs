@@ -1,7 +1,7 @@
 defmodule FindThemApiWeb.SearchChannelTest do
   use FindThemApiWeb.ChannelCase, async: false
 
-  alias FindThemApi.{Accounts, Messages, Remarks, Searches, Volunteers}
+  alias FindThemApi.{Accounts, Locations, Messages, Remarks, Searches, Volunteers}
   alias FindThemApi.ClerkFixtures
   alias FindThemApiWeb.UserSocket
 
@@ -105,6 +105,41 @@ defmodule FindThemApiWeb.SearchChannelTest do
     _ = socket
   end
 
+  # Regression: this push used to carry no last_location key at all (the
+  # roster clause shaped the raw %Volunteer{} with no location lookup),
+  # which would let a coordinator's frontend naively merging this payload
+  # into cached roster state wipe an already-tracked volunteer's live dot
+  # on an unrelated approve/remove.
+  test "a volunteer_updated push carries this volunteer's current last-known location", %{
+    owner: owner,
+    search: search
+  } do
+    {:ok, volunteer} =
+      Volunteers.join_volunteer(search.id, %{
+        name: "Giulia",
+        phone: "+390698765",
+        consent_location: true
+      })
+
+    {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
+
+    {:ok, _location} =
+      Locations.record_ping(approved, %{
+        "lat" => 41.9,
+        "lng" => 12.5,
+        "recorded_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    socket = connect_coordinator(owner)
+    {:ok, _reply, socket} = subscribe_and_join(socket, "search:#{search.id}", %{})
+
+    Volunteers.update_volunteer(approved, %{status: "removed"})
+
+    assert_push "volunteer_updated", %{data: data}
+    assert data.last_location.lat == 41.9
+    _ = socket
+  end
+
   test "relays a remark_created broadcast to a joined volunteer", %{search: search} do
     {volunteer, token} = approved_volunteer(search)
     {:ok, socket} = connect(UserSocket, %{"token" => token})
@@ -190,6 +225,48 @@ defmodule FindThemApiWeb.SearchChannelTest do
     Volunteers.join_volunteer(search.id, %{name: "Andrea", phone: "+390698766"})
 
     refute_push "volunteer_joined", %{}
+    _ = socket
+  end
+
+  test "relays a location_updated broadcast to a joined coordinator", %{
+    owner: owner,
+    search: search
+  } do
+    {volunteer, _token} = approved_volunteer(search)
+    {:ok, approved} = Volunteers.update_volunteer(volunteer, %{consent_location: true})
+
+    socket = connect_coordinator(owner)
+    {:ok, _reply, socket} = subscribe_and_join(socket, "search:#{search.id}", %{})
+
+    {:ok, location} =
+      Locations.record_ping(approved, %{
+        "lat" => 41.9,
+        "lng" => 12.5,
+        "recorded_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    assert_push "location_updated", %{data: data}
+    assert data.id == location.id
+    assert data.volunteer_id == approved.id
+    _ = socket
+  end
+
+  # Privacy, not just "no UI reads it yet" — a volunteer's live position is
+  # coordinator-facing (Story 39); another volunteer on the same search has
+  # no legitimate reason to see it.
+  test "does NOT relay a location_updated broadcast to a volunteer", %{search: search} do
+    {volunteer, token} = approved_volunteer(search)
+    {:ok, approved} = Volunteers.update_volunteer(volunteer, %{consent_location: true})
+    {:ok, socket} = connect(UserSocket, %{"token" => token})
+    {:ok, _reply, socket} = subscribe_and_join(socket, "search:#{search.id}", %{})
+
+    Locations.record_ping(approved, %{
+      "lat" => 41.9,
+      "lng" => 12.5,
+      "recorded_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+    })
+
+    refute_push "location_updated", %{}
     _ = socket
   end
 

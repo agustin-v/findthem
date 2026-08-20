@@ -58,8 +58,29 @@ defmodule FindThemApiWeb.SearchChannel do
   @impl true
   def handle_info({event, %FindThemApi.Volunteers.Volunteer{} = volunteer}, socket) do
     if coordinator?(socket) do
+      # Fetched fresh, not omitted/defaulted — a stale or missing
+      # last_location here would let this push (e.g. an unrelated
+      # approve/remove) wipe a still-consenting, still-tracked
+      # volunteer's live dot on the coordinator's map.
+      last_location =
+        FindThemApi.Locations.last_known_for_volunteer(volunteer.search_id, volunteer.id)
+
       push(socket, to_string(event), %{
-        data: FindThemApiWeb.SearchVolunteerJSON.volunteer_data(volunteer)
+        data: FindThemApiWeb.SearchVolunteerJSON.volunteer_data(volunteer, last_location)
+      })
+    end
+
+    {:noreply, socket}
+  end
+
+  # Coordinator-only, same reasoning as the roster clause above: a live dot
+  # is coordinator-facing UI (Story 39), and volunteers have no legitimate
+  # reason to see each other's position — this is the one place that
+  # scoping actually matters for privacy, not just "no UI reads it yet".
+  def handle_info({event, %FindThemApi.Locations.VolunteerLocation{} = location}, socket) do
+    if coordinator?(socket) do
+      push(socket, to_string(event), %{
+        data: FindThemApiWeb.VolunteerLocationJSON.location_data(location)
       })
     end
 

@@ -21,6 +21,14 @@ defmodule FindThemApiWeb.Router do
     plug FindThemApiWeb.Plugs.VolunteerAuth
   end
 
+  # Must run AFTER :volunteer_authenticated — keys off current_volunteer.id,
+  # which that plug assigns.
+  pipeline :location_rate_limited do
+    plug FindThemApiWeb.Plugs.RateLimit,
+      bucket: "location",
+      key_fn: &FindThemApiWeb.Plugs.RateLimit.volunteer_key/1
+  end
+
   scope "/", FindThemApiWeb do
     pipe_through :api
 
@@ -50,6 +58,12 @@ defmodule FindThemApiWeb.Router do
     post "/messages", VolunteerMessageController, :create
   end
 
+  scope "/volunteer", FindThemApiWeb do
+    pipe_through [:api, :volunteer_authenticated, :location_rate_limited]
+
+    post "/location", VolunteerLocationController, :create
+  end
+
   scope "/api", FindThemApiWeb do
     pipe_through [:api, :authenticated]
 
@@ -59,10 +73,15 @@ defmodule FindThemApiWeb.Router do
       resources "/segments", SegmentController, only: [:index, :update], param: "segment_id"
       get "/segment_assignments", SegmentAssignmentController, :index
       post "/segment_assignments", SegmentAssignmentController, :create
-      delete "/segment_assignments/:segment_id/:volunteer_id", SegmentAssignmentController, :delete
+
+      delete "/segment_assignments/:segment_id/:volunteer_id",
+             SegmentAssignmentController,
+             :delete
+
       resources "/remarks", RemarkController, only: [:index, :create]
       resources "/messages", MessageController, only: [:index, :create]
       resources "/volunteers", SearchVolunteerController, only: [:index, :update]
+      get "/volunteers/:volunteer_id/locations", SearchVolunteerLocationController, :index
       post "/photos", PhotoController, :create
       post "/join_token/rotate", JoinTokenController, :rotate
       post "/generate", GenerationController, :create

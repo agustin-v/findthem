@@ -19,6 +19,12 @@ defmodule FindThemApiWeb.FallbackController do
     |> json(%{errors: %{id: ["already in use"]}})
   end
 
+  def call(conn, {:error, :location_consent_declined}) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{errors: %{location: ["consent not granted"]}})
+  end
+
   def call(conn, {:error, :not_found}) do
     conn
     |> put_status(:not_found)

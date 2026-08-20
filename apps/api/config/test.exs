@@ -29,6 +29,10 @@ config :findthem_api, :geo_client, FindThemApi.Geo.ClientMock
 # Mox — tests must never hit real R2.
 config :findthem_api, :photo_storage, FindThemApi.Photos.StorageMock
 
+# The Sandbox is :manual mode per-test (test_helper.exs) — a background
+# process making its own Repo calls has nothing to check it out of.
+config :findthem_api, :start_location_retention_job, false
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

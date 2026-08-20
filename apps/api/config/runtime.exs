@@ -69,6 +69,12 @@ config :findthem_api, :geo,
   url: System.get_env("GEO_URL", "http://localhost:8000"),
   internal_token: System.get_env("GEO_INTERNAL_TOKEN")
 
+# How long a resolved search's volunteer location pings survive before
+# FindThemApi.Locations.RetentionJob deletes them (Story 38).
+config :findthem_api,
+       :location_retention_days,
+       String.to_integer(System.get_env("LOCATION_RETENTION_DAYS", "30"))
+
 # Subject-photo storage (Story 27) — R2 is S3-compatible, so ex_aws_s3 talks
 # to it unmodified via a custom :s3 host/scheme. Uploads are proxied through
 # this app (browser never talks to R2 directly, same "never call the

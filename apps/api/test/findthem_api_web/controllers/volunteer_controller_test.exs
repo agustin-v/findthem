@@ -412,4 +412,113 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert Segments.list_by_search(search.id) == []
     assert length(Segments.list_by_search(other_search.id)) == 1
   end
+
+  describe "POST /volunteer/location" do
+    test "records a ping for a volunteer who granted location consent at join", %{
+      conn: conn,
+      search: search
+    } do
+      {:ok, volunteer} =
+        Volunteers.join_volunteer(search.id, %{
+          name: "Giulia",
+          phone: "+390698765",
+          consent_location: true
+        })
+
+      {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
+      token = Volunteers.sign_token(FindThemApiWeb.Endpoint, approved.id)
+
+      conn =
+        conn
+        |> auth(token)
+        |> post(~p"/volunteer/location", %{
+          "lat" => 41.9,
+          "lng" => 12.5,
+          "recorded_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      assert %{"data" => data} = json_response(conn, 201)
+      assert data["volunteer_id"] == approved.id
+      assert data["lat"] == 41.9
+    end
+
+    test "rejects a ping for a volunteer who declined location consent at join, with 403", %{
+      conn: conn,
+      search: search
+    } do
+      {:ok, volunteer} =
+        Volunteers.join_volunteer(search.id, %{
+          name: "Luca",
+          phone: "+390698766",
+          consent_location: false
+        })
+
+      {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
+      token = Volunteers.sign_token(FindThemApiWeb.Endpoint, approved.id)
+
+      conn =
+        conn
+        |> auth(token)
+        |> post(~p"/volunteer/location", %{
+          "lat" => 41.9,
+          "lng" => 12.5,
+          "recorded_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      assert json_response(conn, 403)
+      assert FindThemApi.Locations.list_trail(approved) == []
+    end
+
+    test "rejects a missing recorded_at with 422 instead of crashing", %{
+      conn: conn,
+      search: search
+    } do
+      {:ok, volunteer} =
+        Volunteers.join_volunteer(search.id, %{
+          name: "Giulia",
+          phone: "+390698765",
+          consent_location: true
+        })
+
+      {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
+      token = Volunteers.sign_token(FindThemApiWeb.Endpoint, approved.id)
+
+      conn =
+        conn
+        |> auth(token)
+        |> post(~p"/volunteer/location", %{"lat" => 41.9, "lng" => 12.5})
+
+      assert json_response(conn, 422)
+    end
+
+    test "the 11th ping in a minute from the same volunteer is rate limited with 429", %{
+      conn: conn,
+      search: search
+    } do
+      {:ok, volunteer} =
+        Volunteers.join_volunteer(search.id, %{
+          name: "Rapid Pinger",
+          phone: "+390698769",
+          consent_location: true
+        })
+
+      {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
+      token = Volunteers.sign_token(FindThemApiWeb.Endpoint, approved.id)
+
+      responses =
+        for _ <- 1..11 do
+          conn
+          |> auth(token)
+          |> post(~p"/volunteer/location", %{
+            "lat" => 41.9,
+            "lng" => 12.5,
+            "recorded_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+          })
+          |> then(& &1.status)
+        end
+
+      assert Enum.count(responses, &(&1 == 201)) == 10
+      assert List.last(responses) == 429
+    end
+  end
 end

@@ -81,6 +81,7 @@
       "title": "Stato delle zone",
       "segment": "Confine del segmento",
       "restricted": "Area ristretta",
+      "locked": "Bloccato",
       "resource": {
         "people": "Persone a piedi",
         "motorbikes": "Motociclette",
@@ -114,7 +115,17 @@
       "assignPlaceholder": "Assegna un volontario...",
       "assign": "Assegna",
       "unassign": "Rimuovi",
-      "actionFailed": "Qualcosa è andato storto. Riprova."
+      "actionFailed": "Qualcosa è andato storto. Riprova.",
+      "lock": {
+        "lockedFor": "Bloccato per {{name}}",
+        "lockedGeneric": "Bloccato",
+        "reasonNone": "Nessun motivo indicato",
+        "reasonPlaceholder": "Motivo (facoltativo) — visibile a tutti i volontari",
+        "pickVolunteerPlaceholder": "Riserva per...",
+        "lockButton": "Blocca segmento",
+        "unlockButton": "Sblocca segmento",
+        "actionFailed": "Impossibile aggiornare il blocco. Riprova."
+      }
     },
     "remarks": {
       "postNotice": "Pubblica un avviso",

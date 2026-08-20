@@ -48,7 +48,7 @@ export function SearchDetailPage() {
   const { data: volunteers = [], isError: isVolunteersError } = useVolunteers(searchId)
   const { data: segmentStatuses } = useSegments(searchId)
   const statusBySegmentId = useMemo(
-    () => new Map(segmentStatuses?.map((s) => [s.segmentId, s.status])),
+    () => new Map(segmentStatuses?.map((s) => [s.segmentId, s])),
     [segmentStatuses],
   )
   const segments = useGeoSegmentsStore((s) => s.segmentsBySearch[searchId])
@@ -413,6 +413,7 @@ export function SearchDetailPage() {
                       segmentId={selectedSegmentId}
                       volunteers={volunteers}
                       assignments={assignments}
+                      segmentStatus={statusBySegmentId.get(selectedSegmentId)}
                       onClose={() => setSelectedSegmentId(null)}
                     />
                   </div>

@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react'
 import type maplibregl from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
-import type { SegmentStatus } from '@/lib/api'
+import type { SegmentStatusEntry } from '@/lib/api'
 
 const SOURCE_ID = 'segments'
 const FILL_LAYER_ID = 'segments-fill'
 const LINE_LAYER_ID = 'segments-line'
+const LOCK_LINE_LAYER_ID = 'segments-lock-line'
+const LOCK_ICON_LAYER_ID = 'segments-lock-icon'
+const LOCK_LINE_COLOR = '#1f2937'
 
 const RESOURCE_COLORS: Record<string, string> = {
   people: '#3b82f6', // blue
@@ -35,7 +38,8 @@ interface UseSegmentLayerOptions {
   // Live per-segment search status (apps/api's real Segment rows, not the
   // geo response) — merged onto each feature so fill-opacity can fade a
   // segment out once it's been searched, independent of resource coloring.
-  statusBySegmentId?: Map<number, SegmentStatus>
+  // Carries lock state too (Story #52/#56), keyed the same way.
+  statusBySegmentId?: Map<number, SegmentStatusEntry>
   onSegmentClick?: (segmentId: number) => void
 }
 
@@ -44,13 +48,15 @@ interface UseSegmentLayerOptions {
 // exercised this function's output against the click handler's expectations.
 export function colorSegments(
   geojson: FeatureCollection,
-  statusBySegmentId: Map<number, SegmentStatus> | undefined,
+  statusBySegmentId: Map<number, SegmentStatusEntry> | undefined,
 ): FeatureCollection {
   return {
     ...geojson,
     features: geojson.features.map((f) => {
       const segmentId = f.properties?.segment_id as number | undefined
-      const status = (segmentId != null && statusBySegmentId?.get(segmentId)) || 'not_assigned'
+      const entry = segmentId != null ? statusBySegmentId?.get(segmentId) : undefined
+      const status = entry?.status ?? 'not_assigned'
+      const locked = entry?.lockedAt != null
 
       return {
         ...f,
@@ -61,6 +67,8 @@ export function colorSegments(
           // downstream, e.g. SegmentAssignmentPanel) reads segmentId.
           segmentId,
           status,
+          locked,
+          lockReason: entry?.lockReason ?? null,
           color:
             f.properties?.searchable === false
               ? UNSEARCHABLE_COLOR
@@ -138,6 +146,36 @@ export function useSegmentLayer({ map, geojson, statusBySegmentId, onSegmentClic
       },
     })
 
+    // Locked segments get a distinct dark dashed outline on top of the
+    // resource-color line above (matching useRestrictedAreaLayer's dashed
+    // idiom) plus a lock glyph at the polygon's auto-computed label point —
+    // discovering a lock only by tapping every segment individually defeats
+    // the whole point of a visible lock (avoid duplicate work).
+    map.addLayer({
+      id: LOCK_LINE_LAYER_ID,
+      type: 'line',
+      source: SOURCE_ID,
+      filter: ['==', ['get', 'locked'], true],
+      paint: {
+        'line-color': LOCK_LINE_COLOR,
+        'line-width': 2.5,
+        'line-dasharray': [2, 2],
+      },
+    })
+
+    map.addLayer({
+      id: LOCK_ICON_LAYER_ID,
+      type: 'symbol',
+      source: SOURCE_ID,
+      filter: ['==', ['get', 'locked'], true],
+      layout: {
+        'text-field': '🔒',
+        'text-size': 14,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+    })
+
     const handleClick = (e: maplibregl.MapLayerMouseEvent) => {
       const segmentId = e.features?.[0]?.properties?.segmentId as number | undefined
       if (segmentId != null) onSegmentClickRef.current?.(segmentId)
@@ -163,6 +201,8 @@ export function useSegmentLayer({ map, geojson, statusBySegmentId, onSegmentClic
         if (clickHandlerRef.current) map.off('click', FILL_LAYER_ID, clickHandlerRef.current)
         if (map.getLayer(FILL_LAYER_ID)) map.removeLayer(FILL_LAYER_ID)
         if (map.getLayer(LINE_LAYER_ID)) map.removeLayer(LINE_LAYER_ID)
+        if (map.getLayer(LOCK_LINE_LAYER_ID)) map.removeLayer(LOCK_LINE_LAYER_ID)
+        if (map.getLayer(LOCK_ICON_LAYER_ID)) map.removeLayer(LOCK_ICON_LAYER_ID)
         if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID)
       } catch {
         // map may already be removed

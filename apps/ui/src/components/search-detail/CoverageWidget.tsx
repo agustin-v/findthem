@@ -47,6 +47,11 @@ export function CoverageWidget({ segmentStatuses, restrictedCount, meta }: Cover
   const inProgress = segmentStatuses?.filter((s) => s.status === 'in_progress').length ?? 0
   const notYetSearched = total - searched - inProgress
   const pctSearched = total > 0 ? Math.round((searched / total) * 100) : 0
+  // #52 shipped with no auto-expiry and no lock-audit trail — a per-segment
+  // toggle with no aggregate view here would make a forgotten lock
+  // effectively invisible until a coordinator happens to click that exact
+  // segment again.
+  const locked = segmentStatuses?.filter((s) => s.lockedAt != null).length ?? 0
 
   const resourceTypes = meta?.resource_assignment ? Object.keys(meta.resource_assignment) : []
 
@@ -84,6 +89,9 @@ export function CoverageWidget({ segmentStatuses, restrictedCount, meta }: Cover
             label={t('detail.legend.restricted')}
             count={restrictedCount}
           />
+        )}
+        {locked > 0 && (
+          <LegendRow color="#1f2937" dashed label={t('detail.legend.locked')} count={locked} />
         )}
       </div>
 

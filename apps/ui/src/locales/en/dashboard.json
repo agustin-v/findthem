@@ -81,6 +81,7 @@
       "title": "Zone status",
       "segment": "Segment boundary",
       "restricted": "Restricted area",
+      "locked": "Locked",
       "resource": {
         "people": "People on foot",
         "motorbikes": "Motorbikes",
@@ -114,7 +115,17 @@
       "assignPlaceholder": "Assign a volunteer...",
       "assign": "Assign",
       "unassign": "Remove",
-      "actionFailed": "Something went wrong. Please try again."
+      "actionFailed": "Something went wrong. Please try again.",
+      "lock": {
+        "lockedFor": "Locked for {{name}}",
+        "lockedGeneric": "Locked",
+        "reasonNone": "No reason given",
+        "reasonPlaceholder": "Reason (optional) — shown to every volunteer",
+        "pickVolunteerPlaceholder": "Reserve for...",
+        "lockButton": "Lock segment",
+        "unlockButton": "Unlock segment",
+        "actionFailed": "Couldn't update the lock. Please try again."
+      }
     },
     "remarks": {
       "postNotice": "Post a notice",

@@ -71,6 +71,34 @@ export function useUnassignVolunteer(searchId: string) {
   })
 }
 
+export function useLockSegment(searchId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      segmentId,
+      lockedForVolunteerId,
+      lockReason,
+    }: {
+      segmentId: number
+      lockedForVolunteerId: string
+      lockReason?: string
+    }) => api.segments.lock(searchId, segmentId, { lockedForVolunteerId, lockReason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['segments', searchId] })
+    },
+  })
+}
+
+export function useUnlockSegment(searchId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (segmentId: number) => api.segments.unlock(searchId, segmentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['segments', searchId] })
+    },
+  })
+}
+
 export function useMessages(searchId: string) {
   return useQuery({
     queryKey: ['messages', searchId],

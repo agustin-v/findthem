@@ -29,7 +29,21 @@ describe('colorSegments', () => {
   })
 
   it('reads status from the provided map by segment_id', () => {
-    const statusBySegmentId = new Map([[0, 'searched' as const]])
+    const statusBySegmentId = new Map([
+      [
+        0,
+        {
+          segmentId: 0,
+          status: 'searched' as const,
+          searchedAt: null,
+          searchedByVolunteerId: null,
+          lockedAt: null,
+          lockedByUserId: null,
+          lockedForVolunteerId: null,
+          lockReason: null,
+        },
+      ],
+    ])
     const colored = colorSegments(geoSegments([{ segment_id: 0 }]), statusBySegmentId)
     expect(colored.features[0].properties?.status).toBe('searched')
   })
@@ -37,5 +51,31 @@ describe('colorSegments', () => {
   it('colors a non-searchable segment gray regardless of status', () => {
     const colored = colorSegments(geoSegments([{ segment_id: 0, searchable: false }]), undefined)
     expect(colored.features[0].properties?.color).toBe('#9ca3af')
+  })
+
+  it('defaults locked to false when no status map entry exists', () => {
+    const colored = colorSegments(geoSegments([{ segment_id: 0 }]), undefined)
+    expect(colored.features[0].properties?.locked).toBe(false)
+  })
+
+  it('stamps locked + lockReason from the status map entry', () => {
+    const statusBySegmentId = new Map([
+      [
+        0,
+        {
+          segmentId: 0,
+          status: 'in_progress' as const,
+          searchedAt: null,
+          searchedByVolunteerId: null,
+          lockedAt: '2026-08-20T00:00:00Z',
+          lockedByUserId: 'user_1',
+          lockedForVolunteerId: 'vol_1',
+          lockReason: 'bridge is out',
+        },
+      ],
+    ])
+    const colored = colorSegments(geoSegments([{ segment_id: 0 }]), statusBySegmentId)
+    expect(colored.features[0].properties?.locked).toBe(true)
+    expect(colored.features[0].properties?.lockReason).toBe('bridge is out')
   })
 })

@@ -302,7 +302,16 @@ describe('api.segments.getBySearch', () => {
         Promise.resolve({
           data: [
             { segment_id: 0, status: 'not_assigned', searched_at: null },
-            { segment_id: 1, status: 'searched', searched_at: '2026-08-05T10:00:00Z' },
+            {
+              segment_id: 1,
+              status: 'in_progress',
+              searched_at: null,
+              searched_by_volunteer_id: 'vol-1',
+              locked_at: '2026-08-20T10:00:00Z',
+              locked_by_user_id: 'user-1',
+              locked_for_volunteer_id: 'vol-1',
+              lock_reason: 'went offline mid-sweep',
+            },
           ],
         }),
     })
@@ -310,8 +319,26 @@ describe('api.segments.getBySearch', () => {
     const result = await api.segments.getBySearch('search-1')
 
     expect(result).toEqual([
-      { segmentId: 0, status: 'not_assigned', searchedAt: null },
-      { segmentId: 1, status: 'searched', searchedAt: '2026-08-05T10:00:00Z' },
+      {
+        segmentId: 0,
+        status: 'not_assigned',
+        searchedAt: null,
+        searchedByVolunteerId: undefined,
+        lockedAt: undefined,
+        lockedByUserId: undefined,
+        lockedForVolunteerId: undefined,
+        lockReason: undefined,
+      },
+      {
+        segmentId: 1,
+        status: 'in_progress',
+        searchedAt: null,
+        searchedByVolunteerId: 'vol-1',
+        lockedAt: '2026-08-20T10:00:00Z',
+        lockedByUserId: 'user-1',
+        lockedForVolunteerId: 'vol-1',
+        lockReason: 'went offline mid-sweep',
+      },
     ])
     const [url] = mockFetch.mock.calls[0]
     expect(url).toContain('/api/searches/search-1/segments')
@@ -331,11 +358,67 @@ describe('api.segments.updateStatus', () => {
 
     const result = await api.segments.updateStatus('search-1', 3, 'searched')
 
-    expect(result).toEqual({ segmentId: 3, status: 'searched', searchedAt: '2026-08-05T10:00:00Z' })
+    expect(result).toMatchObject({ segmentId: 3, status: 'searched', searchedAt: '2026-08-05T10:00:00Z' })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toContain('/api/searches/search-1/segments/3')
     expect(init.method).toBe('PATCH')
     expect(JSON.parse(init.body)).toEqual({ status: 'searched' })
+  })
+})
+
+describe('api.segments.lock', () => {
+  it('POSTs the reserved volunteer + reason and maps the response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: {
+            segment_id: 3,
+            status: 'in_progress',
+            searched_at: null,
+            locked_at: '2026-08-20T10:00:00Z',
+            locked_by_user_id: 'user-1',
+            locked_for_volunteer_id: 'vol-1',
+            lock_reason: 'went offline mid-sweep',
+          },
+        }),
+    })
+
+    const result = await api.segments.lock('search-1', 3, {
+      lockedForVolunteerId: 'vol-1',
+      lockReason: 'went offline mid-sweep',
+    })
+
+    expect(result.lockedForVolunteerId).toBe('vol-1')
+    expect(result.lockReason).toBe('went offline mid-sweep')
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/segments/3/lock')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({
+      locked_for_volunteer_id: 'vol-1',
+      lock_reason: 'went offline mid-sweep',
+    })
+  })
+})
+
+describe('api.segments.unlock', () => {
+  it('POSTs to the unlock endpoint and maps the response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: { segment_id: 3, status: 'in_progress', searched_at: null, locked_at: null },
+        }),
+    })
+
+    const result = await api.segments.unlock('search-1', 3)
+
+    expect(result.lockedAt).toBe(null)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/segments/3/unlock')
+    expect(init.method).toBe('POST')
   })
 })
 

@@ -7,16 +7,39 @@ export interface SegmentStatusEntry {
   segmentId: number
   status: SegmentStatus
   searchedAt: string | null
+  searchedByVolunteerId: string | null
+  // Story #52/#56 — locked_by_user_id/locked_for_volunteer_id are
+  // coordinator-only fields, safe here since this whole shape is the
+  // coordinator-facing SegmentJSON response, never the volunteer-facing
+  // reduced one.
+  lockedAt: string | null
+  lockedByUserId: string | null
+  lockedForVolunteerId: string | null
+  lockReason: string | null
 }
 
 interface RemoteSegmentStatus {
   segment_id: number
   status: SegmentStatus
   searched_at: string | null
+  searched_by_volunteer_id: string | null
+  locked_at: string | null
+  locked_by_user_id: string | null
+  locked_for_volunteer_id: string | null
+  lock_reason: string | null
 }
 
 function mapSegmentStatus(remote: RemoteSegmentStatus): SegmentStatusEntry {
-  return { segmentId: remote.segment_id, status: remote.status, searchedAt: remote.searched_at }
+  return {
+    segmentId: remote.segment_id,
+    status: remote.status,
+    searchedAt: remote.searched_at,
+    searchedByVolunteerId: remote.searched_by_volunteer_id,
+    lockedAt: remote.locked_at,
+    lockedByUserId: remote.locked_by_user_id,
+    lockedForVolunteerId: remote.locked_for_volunteer_id,
+    lockReason: remote.lock_reason,
+  }
 }
 
 export interface SegmentAssignment {
@@ -393,6 +416,23 @@ export const api = {
       const { data } = await apiClient.patch<{ data: RemoteSegmentStatus }>(
         `/api/searches/${searchId}/segments/${segmentId}`,
         { status: newStatus },
+      )
+      return mapSegmentStatus(data)
+    },
+    lock: async (
+      searchId: string,
+      segmentId: number,
+      params: { lockedForVolunteerId: string; lockReason?: string },
+    ): Promise<SegmentStatusEntry> => {
+      const { data } = await apiClient.post<{ data: RemoteSegmentStatus }>(
+        `/api/searches/${searchId}/segments/${segmentId}/lock`,
+        { locked_for_volunteer_id: params.lockedForVolunteerId, lock_reason: params.lockReason },
+      )
+      return mapSegmentStatus(data)
+    },
+    unlock: async (searchId: string, segmentId: number): Promise<SegmentStatusEntry> => {
+      const { data } = await apiClient.post<{ data: RemoteSegmentStatus }>(
+        `/api/searches/${searchId}/segments/${segmentId}/unlock`,
       )
       return mapSegmentStatus(data)
     },

@@ -26,6 +26,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useLocationReporting } from '@/hooks/useLocationReporting';
 import { useTheme } from '@/hooks/use-theme';
 import {
+  ApiError,
   getVolunteerMessages,
   getVolunteerSearch,
   isAuthError,
@@ -56,6 +57,7 @@ const EMPTY_SEGMENTS_FC: FeatureCollection<Polygon | MultiPolygon, SegmentProper
   features: [],
 };
 const MY_ASSIGNMENT_COLOR = '#DD5A34';
+const LOCK_LINE_COLOR = '#1f2937';
 
 const STATUS_LABELS: Record<SegmentStatus, string> = {
   not_assigned: 'Not started',
@@ -110,6 +112,9 @@ function toSegmentModel(segment: VolunteerSegment): SegmentStatusInfo {
     segmentId: segment.segmentId,
     status: segment.status,
     searchedAt: segment.searchedAt ? new Date(segment.searchedAt).getTime() : undefined,
+    locked: segment.locked,
+    lockedForMe: segment.lockedForMe,
+    lockReason: segment.lockReason,
   };
 }
 
@@ -406,7 +411,14 @@ export default function MapScreen() {
         // view yet (no status row fetched) — treat as fresh/not_assigned
         // rather than silently doing nothing on tap.
         setSegmentActionError(null);
-        setSelectedSegment({ segmentId: properties.segmentId, status: 'not_assigned', searchedAt: null });
+        setSelectedSegment({
+          segmentId: properties.segmentId,
+          status: 'not_assigned',
+          searchedAt: null,
+          locked: false,
+          lockedForMe: false,
+          lockReason: null,
+        });
       }
     },
     [segments],
@@ -435,8 +447,19 @@ export default function MapScreen() {
         setConfirmMarkSearched(false);
         setAreaSearchedSuccess(true);
       }
-    } catch {
-      setSegmentActionError('Could not update this segment. Please try again.');
+    } catch (error) {
+      // A locked segment (409, reserved for a different volunteer) gets its
+      // own message — relevant both for this direct tap and, later, for a
+      // queued offline action (#54) that fails to sync because the segment
+      // got locked in the meantime. Refresh so the sheet's own locked state
+      // catches up and the disabled buttons reflect reality immediately,
+      // instead of the volunteer retrying the same blocked action.
+      if (error instanceof ApiError && error.status === 409 && error.errors?.segment) {
+        setSegmentActionError('This segment is locked for another volunteer right now.');
+        refreshSegments();
+      } else {
+        setSegmentActionError('Could not update this segment. Please try again.');
+      }
       setConfirmMarkSearched(false);
     } finally {
       setUpdatingSegment(false);
@@ -525,6 +548,23 @@ export default function MapScreen() {
                 'line-color': MY_ASSIGNMENT_COLOR,
                 'line-width': 4,
                 'line-opacity': 0.9,
+              }}
+            />
+            {/* A locked segment needs to be discoverable at a glance, not
+                only by tapping it — a map-level dashed outline, same idiom
+                apps/ui uses (dark, dashed, distinct from every status
+                color), matching the whole point of Story #52/#56: avoid
+                duplicate work by making a lock visible before someone
+                starts walking a segment reserved for someone else. */}
+            <Layer
+              id="segments-lock-line"
+              type="line"
+              source="segments"
+              filter={['==', ['get', 'locked'], true]}
+              paint={{
+                'line-color': LOCK_LINE_COLOR,
+                'line-width': 3,
+                'line-dasharray': [2, 2],
               }}
             />
           </GeoJSONSource>
@@ -663,6 +703,18 @@ export default function MapScreen() {
                     </View>
                     <ThemedText type="subtitle">{STATUS_HEADLINES[selectedSegment.status]}</ThemedText>
 
+                    {selectedSegment.locked && (
+                      <View style={styles.lockedNotice}>
+                        <ThemedText type="small" style={styles.lockedNoticeText}>
+                          {selectedSegment.lockedForMe
+                            ? 'Locked — reserved for you'
+                            : selectedSegment.lockReason
+                              ? `Locked: ${selectedSegment.lockReason}`
+                              : 'Locked by your coordinator'}
+                        </ThemedText>
+                      </View>
+                    )}
+
                     {segmentActionError && (
                       <ThemedText type="small" style={styles.error}>
                         {segmentActionError}
@@ -673,13 +725,21 @@ export default function MapScreen() {
                       label="Start searching"
                       variant="secondary"
                       onPress={() => handleSetSegmentStatus('in_progress')}
-                      disabled={selectedSegment.status === 'in_progress' || updatingSegment}
+                      disabled={
+                        selectedSegment.status === 'in_progress' ||
+                        updatingSegment ||
+                        (selectedSegment.locked && !selectedSegment.lockedForMe)
+                      }
                       loading={updatingSegment}
                     />
                     <PrimaryButton
                       label="Mark as searched"
                       onPress={() => setConfirmMarkSearched(true)}
-                      disabled={selectedSegment.status === 'searched' || updatingSegment}
+                      disabled={
+                        selectedSegment.status === 'searched' ||
+                        updatingSegment ||
+                        (selectedSegment.locked && !selectedSegment.lockedForMe)
+                      }
                       loading={updatingSegment}
                     />
                     <PrimaryButton
@@ -1021,5 +1081,14 @@ const styles = StyleSheet.create({
   },
   error: {
     color: '#B3432B',
+  },
+  lockedNotice: {
+    borderRadius: Radius.chip,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    backgroundColor: 'rgba(31,41,55,0.1)',
+  },
+  lockedNoticeText: {
+    color: '#1f2937',
   },
 });

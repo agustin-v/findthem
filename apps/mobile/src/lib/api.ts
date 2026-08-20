@@ -155,6 +155,12 @@ export interface VolunteerSegment {
   segmentId: number;
   status: SegmentStatus;
   searchedAt: string | null;
+  // Story #52/#56 — the reduced volunteer-facing lock shape: never a raw
+  // user/volunteer id, just enough to render "locked" and know whether
+  // *this* volunteer is the one it's reserved for.
+  locked: boolean;
+  lockedForMe: boolean;
+  lockReason: string | null;
 }
 
 // The polygon geometry itself — apps/geo's own segment shapes, persisted
@@ -185,6 +191,9 @@ interface RemoteSegment {
   segment_id: number;
   status: SegmentStatus;
   searched_at: string | null;
+  locked: boolean;
+  locked_for_me: boolean;
+  lock_reason: string | null;
 }
 
 interface RemoteGeneration {
@@ -219,6 +228,9 @@ function mapVolunteerSegment(segment: RemoteSegment): VolunteerSegment {
     segmentId: segment.segment_id,
     status: segment.status,
     searchedAt: segment.searched_at,
+    locked: segment.locked ?? false,
+    lockedForMe: segment.locked_for_me ?? false,
+    lockReason: segment.lock_reason ?? null,
   };
 }
 

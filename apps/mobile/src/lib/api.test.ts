@@ -205,7 +205,16 @@ describe('getVolunteerSearch', () => {
       lkpAt: '2026-08-01T10:00:00Z',
       photoUrls: ['https://signed.example.com/searches/search-1/a.jpg'],
     });
-    expect(result.segments).toEqual([{ segmentId: 0, status: 'not_assigned', searchedAt: null }]);
+    expect(result.segments).toEqual([
+      {
+        segmentId: 0,
+        status: 'not_assigned',
+        searchedAt: null,
+        locked: false,
+        lockedForMe: false,
+        lockReason: null,
+      },
+    ]);
     expect(result.generation?.segments.features).toHaveLength(1);
     expect(result.mySegmentIds).toEqual([0]);
     // Every remark on the search, not just this volunteer's own (Story 37) —
@@ -344,6 +353,43 @@ describe('updateSegmentStatus', () => {
     expect(url).toContain('/volunteer/segments/0');
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body)).toEqual({ status: 'searched' });
+  });
+
+  it('maps the reduced lock shape from a locked segment response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            segment_id: 0,
+            status: 'in_progress',
+            searched_at: null,
+            locked: true,
+            locked_for_me: true,
+            lock_reason: 'bridge is out',
+          },
+        }),
+    });
+
+    const result = await updateSegmentStatus('the-token', 0, 'in_progress');
+
+    expect(result.locked).toBe(true);
+    expect(result.lockedForMe).toBe(true);
+    expect(result.lockReason).toBe('bridge is out');
+  });
+
+  it('throws an ApiError with the segment-locked detail on a 409', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      statusText: 'Conflict',
+      json: () => Promise.resolve({ errors: { segment: ['locked'] } }),
+    });
+
+    await expect(updateSegmentStatus('the-token', 0, 'searched')).rejects.toMatchObject({
+      status: 409,
+      errors: { segment: ['locked'] },
+    });
   });
 });
 

@@ -16,6 +16,11 @@ export interface SegmentStatusInfo {
   segmentId: number;
   status: SegmentStatus;
   searchedAt?: number;
+  // Story #52/#56 — reduced volunteer-facing lock shape (never a raw
+  // user/volunteer id), mirrors VolunteerSegment in lib/api.ts.
+  locked?: boolean;
+  lockedForMe?: boolean;
+  lockReason?: string | null;
 }
 
 export interface SegmentProperties {
@@ -91,6 +96,7 @@ export function segmentsToGeoJSON(
         status,
         searchable,
         assignedToMe: mySegmentIdSet.has(segmentId),
+        locked: info?.locked ?? false,
         color: searchable ? getSegmentColor({ status, searchedAt: info?.searchedAt }) : UNSEARCHABLE_COLOR,
       },
     };

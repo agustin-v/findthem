@@ -111,6 +111,19 @@ describe('segmentsToGeoJSON', () => {
     expect(one?.properties?.assignedToMe).toBe(true);
   });
 
+  it('defaults locked to false when no status row yet exists', () => {
+    const geojson = segmentsToGeoJSON(geoSegments([{ segmentId: 0 }]), []);
+    expect(geojson.features[0].properties?.locked).toBe(false);
+  });
+
+  it('stamps locked from the status row', () => {
+    const statuses: SegmentStatusInfo[] = [
+      { segmentId: 0, status: 'in_progress', locked: true, lockedForMe: false, lockReason: 'bridge is out' },
+    ];
+    const geojson = segmentsToGeoJSON(geoSegments([{ segmentId: 0 }]), statuses);
+    expect(geojson.features[0].properties?.locked).toBe(true);
+  });
+
   it('preserves each feature geometry unchanged', () => {
     const geojson = segmentsToGeoJSON(geoSegments([{ segmentId: 0 }]), []);
     expect(geojson.features[0].geometry).toEqual({

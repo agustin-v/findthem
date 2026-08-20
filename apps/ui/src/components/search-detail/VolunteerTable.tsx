@@ -2,7 +2,7 @@ import { useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatDistanceToNow } from 'date-fns'
 import { it, enUS } from 'date-fns/locale'
-import { Check, X, MoreHorizontal, MessageSquare, Search } from 'lucide-react'
+import { Check, X, MoreHorizontal, MessageSquare, Search, MapPin, MapPinOff } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -25,6 +25,41 @@ const ONLINE_THRESHOLD_MS = 5 * 60 * 1000
 function isOnline(lastActiveAt: string | null) {
   if (!lastActiveAt) return false
   return Date.now() - new Date(lastActiveAt).getTime() < ONLINE_THRESHOLD_MS
+}
+
+// Visually distinct, not a subtle toggle state (Story 39) — a volunteer
+// who declined location consent gets a crossed-out pin at full muted
+// weight, never the same icon-and-shade as one who just hasn't gotten a
+// GPS fix yet (that state is the faint one — shape AND weight both
+// differ, not just a 12px glyph swap). role="img" alongside aria-label
+// since a bare lucide <svg> has no implicit role for screen readers to
+// pick up the label from; title gives sighted mouse users the same
+// explanation on hover, since there's no legend anywhere in this view.
+function LocationIndicator({ volunteer }: { volunteer: Volunteer }) {
+  const { t } = useTranslation('dashboard')
+
+  if (!volunteer.consentLocation) {
+    const label = t('detail.liveLocation.noConsent')
+    return (
+      <span title={label} className="inline-flex shrink-0">
+        <MapPinOff className="size-3.5 text-muted-foreground" role="img" aria-label={label} />
+      </span>
+    )
+  }
+
+  const label = volunteer.lastLocation
+    ? t('detail.liveLocation.tracked')
+    : t('detail.liveLocation.noFixYet')
+
+  return (
+    <span title={label} className="inline-flex shrink-0">
+      <MapPin
+        className={cn('size-3.5', volunteer.lastLocation ? 'text-actor-volunteer' : 'text-muted-foreground/40')}
+        role="img"
+        aria-label={label}
+      />
+    </span>
+  )
 }
 
 interface VolunteerTableProps {
@@ -137,7 +172,18 @@ export function VolunteerTable({
                               {initials(v.name)}
                             </div>
                             <div className="min-w-0">
-                              <p className="truncate font-medium">{v.name}</p>
+                              <p className="flex min-w-0 items-center gap-1 font-medium">
+                                {/* min-w-0 on the flex item itself, not just
+                                    the row — text-overflow:ellipsis doesn't
+                                    apply to a flex container, and a flex
+                                    item's default min-width:auto stops it
+                                    from ever shrinking below its content
+                                    width without this, which also pushes
+                                    LocationIndicator outside the row's
+                                    overflow:hidden box for a long name. */}
+                                <span className="min-w-0 truncate">{v.name}</span>
+                                <LocationIndicator volunteer={v} />
+                              </p>
                               <p className="truncate text-[0.7rem] text-muted-foreground">
                                 {t('detail.zonesSearchedBy', { count: v.segmentsSearched })}
                               </p>

@@ -129,6 +129,16 @@
         "hazard": "Pericolo",
         "note": "Nota"
       }
+    },
+    "liveLocation": {
+      "tracked": "Posizione in tempo reale",
+      "noFixYet": "Condivisione posizione attiva, nessun rilevamento ancora",
+      "noConsent": "Condivisione posizione disattivata"
+    },
+    "trail": {
+      "viewing": "Percorso di {{name}}",
+      "hide": "Nascondi percorso",
+      "loadFailed": "Impossibile caricare il percorso di questo volontario."
     }
   }
 }

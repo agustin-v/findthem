@@ -57,12 +57,20 @@ export interface SearchDetail extends Search {
 
 export type VolunteerStatus = 'pending' | 'approved' | 'removed'
 
+export interface VolunteerLocation {
+  lat: number
+  lng: number
+  recordedAt: string
+}
+
 export interface Volunteer {
   id: string
   name: string
   phone: string
   resourceType: string | null
   status: VolunteerStatus
+  consentLocation: boolean
+  lastLocation: VolunteerLocation | null
   lastActiveAt: string | null
   joinedAt: string
   approvedAt: string | null
@@ -135,12 +143,20 @@ interface RemoteSearch {
   join_token: string
 }
 
+interface RemoteVolunteerLocation {
+  lat: number
+  lng: number
+  recorded_at: string
+}
+
 interface RemoteVolunteer {
   id: string
   name: string
   phone: string
   resource_type: string | null
   status: VolunteerStatus
+  consent_location: boolean
+  last_location: RemoteVolunteerLocation | null
   last_active_at: string | null
   joined_at: string
   approved_at: string | null
@@ -181,6 +197,10 @@ interface RemoteJoinPreview {
   area: string | null
 }
 
+function mapVolunteerLocation(remote: RemoteVolunteerLocation): VolunteerLocation {
+  return { lat: remote.lat, lng: remote.lng, recordedAt: remote.recorded_at }
+}
+
 function mapVolunteer(remote: RemoteVolunteer): Volunteer {
   return {
     id: remote.id,
@@ -188,6 +208,8 @@ function mapVolunteer(remote: RemoteVolunteer): Volunteer {
     phone: remote.phone,
     resourceType: remote.resource_type,
     status: remote.status,
+    consentLocation: remote.consent_location,
+    lastLocation: remote.last_location ? mapVolunteerLocation(remote.last_location) : null,
     lastActiveAt: remote.last_active_at,
     joinedAt: remote.joined_at,
     approvedAt: remote.approved_at,
@@ -340,6 +362,12 @@ export const api = {
         { status },
       )
       return mapVolunteer(data)
+    },
+    getTrail: async (searchId: string, volunteerId: string): Promise<VolunteerLocation[]> => {
+      const { data } = await apiClient.get<{ data: RemoteVolunteerLocation[] }>(
+        `/api/searches/${searchId}/volunteers/${volunteerId}/locations`,
+      )
+      return data.map(mapVolunteerLocation)
     },
   },
   join: {

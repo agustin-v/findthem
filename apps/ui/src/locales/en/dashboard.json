@@ -129,6 +129,16 @@
         "hazard": "Hazard",
         "note": "Note"
       }
+    },
+    "liveLocation": {
+      "tracked": "Live location",
+      "noFixYet": "Location sharing on, no fix yet",
+      "noConsent": "Location sharing off"
+    },
+    "trail": {
+      "viewing": "Viewing {{name}}'s trail",
+      "hide": "Hide trail",
+      "loadFailed": "Couldn't load this volunteer's trail."
     }
   }
 }

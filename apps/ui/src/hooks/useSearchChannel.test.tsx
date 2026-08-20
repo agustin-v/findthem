@@ -61,6 +61,46 @@ describe('useSearchChannel', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['messages', 'search-1'] })
   })
 
+  it('invalidates the volunteers query when a location_updated event arrives', async () => {
+    const queryClient = new QueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    renderHook(() => useSearchChannel('search-1'), { wrapper: wrapper(queryClient) })
+
+    await waitFor(() => expect(handlers.has('location_updated')).toBe(true))
+    handlers.get('location_updated')?.()
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['volunteers', 'search-1'] })
+  })
+
+  // Regression: a coordinator watching a volunteer's breadcrumb trail
+  // needs it kept fresh — without this, the trail line would silently
+  // stop growing while the volunteer's live dot kept moving.
+  it('also invalidates the volunteer-trail query when a location_updated event arrives', async () => {
+    const queryClient = new QueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    renderHook(() => useSearchChannel('search-1'), { wrapper: wrapper(queryClient) })
+
+    await waitFor(() => expect(handlers.has('location_updated')).toBe(true))
+    handlers.get('location_updated')?.()
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['volunteer-trail', 'search-1'] })
+  })
+
+  // Regression: a trail left open for a volunteer who's then removed (or,
+  // should a future story add it, loses location consent) must stop
+  // showing stale data rather than only refreshing on the next ping.
+  it('also invalidates the volunteer-trail query when a volunteer_updated event arrives', async () => {
+    const queryClient = new QueryClient()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    renderHook(() => useSearchChannel('search-1'), { wrapper: wrapper(queryClient) })
+
+    await waitFor(() => expect(handlers.has('volunteer_updated')).toBe(true))
+    handlers.get('volunteer_updated')?.()
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['volunteers', 'search-1'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['volunteer-trail', 'search-1'] })
+  })
+
   it('does not register a handler for an unrelated search id after unmount', async () => {
     const queryClient = new QueryClient()
     const { unmount } = renderHook(() => useSearchChannel('search-1'), {

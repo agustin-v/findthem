@@ -31,6 +31,8 @@ function approvedVolunteer(overrides: Partial<Volunteer> = {}): Volunteer {
     phone: '+390698766',
     resourceType: 'people',
     status: 'approved',
+    consentLocation: false,
+    lastLocation: null,
     lastActiveAt: null,
     joinedAt: '2026-08-01T09:00:00Z',
     approvedAt: '2026-08-01T09:05:00Z',

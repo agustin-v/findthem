@@ -31,9 +31,16 @@ export function useSearchChannel(searchId: string | undefined) {
         channel.on('volunteer_joined', () =>
           queryClient.invalidateQueries({ queryKey: ['volunteers', searchId] }),
         )
-        channel.on('volunteer_updated', () =>
-          queryClient.invalidateQueries({ queryKey: ['volunteers', searchId] }),
-        )
+        // Also invalidates the trail key (partial match — every
+        // ['volunteer-trail', searchId, *] query) so a coordinator with a
+        // trail open doesn't keep showing it after that volunteer is
+        // removed or (should a future story add revocation) loses
+        // location consent — Locations.list_trail/1 re-evaluates consent
+        // server-side on every fetch, but nothing refetches without this.
+        channel.on('volunteer_updated', () => {
+          queryClient.invalidateQueries({ queryKey: ['volunteers', searchId] })
+          queryClient.invalidateQueries({ queryKey: ['volunteer-trail', searchId] })
+        })
         channel.on('segment_updated', () =>
           queryClient.invalidateQueries({ queryKey: ['segments', searchId] }),
         )
@@ -57,6 +64,22 @@ export function useSearchChannel(searchId: string | undefined) {
         channel.on('message_created', () =>
           queryClient.invalidateQueries({ queryKey: ['messages', searchId] }),
         )
+        // Coordinator-only event (Story 38's SearchChannel scoping) — a
+        // volunteer's live position. Invalidating the whole volunteers
+        // list on every ping (rather than trusting the push payload and
+        // patching one volunteer's last_location directly) is the same
+        // "wake up sooner, never trust the payload as truth" pattern as
+        // every other handler here; ping cadence is bounded (~15m
+        // distance-triggered / ~60s idle keepalive per Story 40), so this
+        // isn't a hot loop. Also invalidates the trail key — without this,
+        // a coordinator watching a volunteer's breadcrumb trail would see
+        // their live dot keep moving while the drawn trail line silently
+        // stops growing, showing a wrong (incomplete) answer to "was this
+        // area actually walked" with no indication it's stale.
+        channel.on('location_updated', () => {
+          queryClient.invalidateQueries({ queryKey: ['volunteers', searchId] })
+          queryClient.invalidateQueries({ queryKey: ['volunteer-trail', searchId] })
+        })
         // The geo response isn't a React Query cache — it's push-only into
         // the Zustand store directly, same shape useGenerateSegments already
         // writes on a manual (re)generate.

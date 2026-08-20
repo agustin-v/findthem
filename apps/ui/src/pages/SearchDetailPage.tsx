@@ -20,10 +20,13 @@ import {
   useSegmentAssignments,
   useMessages,
   useRemarks,
+  useVolunteerTrail,
 } from '@/hooks/useSearches'
 import { useSegmentLayer } from '@/hooks/useSegmentLayer'
 import { useRestrictedAreaLayer } from '@/hooks/useRestrictedAreaLayer'
 import { useRemarkMarkers } from '@/hooks/useRemarkMarkers'
+import { useLiveVolunteerMarkers } from '@/hooks/useLiveVolunteerMarkers'
+import { useVolunteerTrailLayer } from '@/hooks/useVolunteerTrailLayer'
 import { useGenerateSegments } from '@/hooks/useGenerateSegments'
 import { useSearchChannel } from '@/hooks/useSearchChannel'
 import { useGeoSegmentsStore } from '@/stores/useGeoSegmentsStore'
@@ -76,6 +79,12 @@ export function SearchDetailPage() {
     lat: number
     lng: number
   } | null>(null)
+  const [selectedTrailVolunteerId, setSelectedTrailVolunteerId] = useState<string | null>(null)
+  const {
+    data: trail,
+    isPending: isTrailPending,
+    isError: isTrailError,
+  } = useVolunteerTrail(searchId, selectedTrailVolunteerId)
 
   // Tracks, per volunteer, the inserted_at of the last message the
   // coordinator has actually seen — kept here (not inside ChatPanel) so it
@@ -200,6 +209,23 @@ export function SearchDetailPage() {
   useRestrictedAreaLayer({ map, geojson: restrictedAreas ?? null })
   useRemarkMarkers({ map, remarks })
 
+  const handleSelectTrailVolunteer = useCallback((volunteerId: string) => {
+    // Click the same dot again to hide the trail — a toggle, not a
+    // one-way drill-in with no way back except the close button.
+    setSelectedTrailVolunteerId((current) => (current === volunteerId ? null : volunteerId))
+  }, [])
+  useLiveVolunteerMarkers({
+    map,
+    volunteers,
+    selectedVolunteerId: selectedTrailVolunteerId,
+    onSelectVolunteer: handleSelectTrailVolunteer,
+    // A tap on a volunteer dot while placing a remark should place the
+    // pin underneath it, not open a trail — same reasoning as
+    // onSegmentClick's own suspension below.
+    suppressClicks: placingRemark,
+  })
+  useVolunteerTrailLayer({ map, trail: selectedTrailVolunteerId ? (trail ?? null) : null })
+
   // "Post a notice" — the next map click while placingRemark is true
   // captures a location and hands off to RemarkComposer instead of
   // submitting anything itself; this hook only owns picking the point.
@@ -236,6 +262,24 @@ export function SearchDetailPage() {
       setPlacingRemark(false)
       setPendingRemarkLocation(null)
     }
+  }
+
+  // TanStack Router does not remount this component on a searchId change
+  // (no remountDeps configured on this route) — without this, a
+  // volunteer/segment/trail selected on one search's detail page survives
+  // navigating to a different search's, driving requests scoped to the
+  // NEW searchId with an id that belongs to the OLD one (e.g.
+  // useVolunteerTrail(newSearchId, oldVolunteerId)). Harmless today only
+  // because the backend correctly 404s a volunteer_id that doesn't belong
+  // to the given search — this exists so the frontend doesn't rely on
+  // that alone. Adjusted during render, not an effect — same pattern as
+  // the two checks above.
+  const [searchIdAtLastCheck, setSearchIdAtLastCheck] = useState(searchId)
+  if (searchId !== searchIdAtLastCheck) {
+    setSearchIdAtLastCheck(searchId)
+    setSelectedSegmentId(null)
+    setChatVolunteerId(null)
+    setSelectedTrailVolunteerId(null)
   }
 
   if (isLoading) {
@@ -290,12 +334,37 @@ export function SearchDetailPage() {
                   zoom={14}
                   className="absolute inset-0 h-full w-full"
                   onMapReady={handleMapReady}
+                  onMapDestroy={() => setMap(null)}
                 />
               ) : (
                 <div className="absolute inset-0 bg-muted" />
               )}
 
               <div className="pointer-events-none absolute inset-0 p-4">
+                {selectedTrailVolunteerId && (
+                  <div className="pointer-events-auto absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-center gap-3 rounded-full bg-card/95 px-4 py-2 shadow-lg backdrop-blur-sm">
+                    <span className="min-w-0 truncate text-sm">
+                      {isTrailError
+                        ? t('detail.trail.loadFailed')
+                        : t('detail.trail.viewing', {
+                            name:
+                              volunteers.find((v) => v.id === selectedTrailVolunteerId)?.name ??
+                              '',
+                          })}
+                    </span>
+                    {isTrailPending && !isTrailError && (
+                      <span className="size-3 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => setSelectedTrailVolunteerId(null)}
+                    >
+                      {t('detail.trail.hide')}
+                    </Button>
+                  </div>
+                )}
                 {placingRemark ? (
                   <div className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-3 rounded-full bg-card/95 px-4 py-2 shadow-lg backdrop-blur-sm">
                     <span className="text-sm">{t('detail.remarks.tapToPlace')}</span>

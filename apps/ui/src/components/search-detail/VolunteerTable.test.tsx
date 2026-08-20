@@ -24,6 +24,8 @@ function pendingVolunteer(overrides: Partial<Volunteer> = {}): Volunteer {
     phone: '+390698765',
     resourceType: 'people',
     status: 'pending',
+    consentLocation: false,
+    lastLocation: null,
     lastActiveAt: null,
     joinedAt: '2026-08-01T10:00:00Z',
     approvedAt: null,
@@ -40,6 +42,8 @@ function approvedVolunteer(overrides: Partial<Volunteer> = {}): Volunteer {
     phone: '+390698766',
     resourceType: 'cars',
     status: 'approved',
+    consentLocation: false,
+    lastLocation: null,
     lastActiveAt: null,
     joinedAt: '2026-08-01T09:00:00Z',
     approvedAt: '2026-08-01T09:05:00Z',
@@ -119,6 +123,42 @@ describe('VolunteerTable', () => {
 
     const row = screen.getByText('Luca Moretti').closest('tr')!
     expect(within(row).getByText('—')).toBeInTheDocument()
+  })
+
+  it('shows a crossed-out pin for a volunteer who declined location consent', async () => {
+    const user = userEvent.setup()
+    renderTable({ volunteers: [approvedVolunteer({ consentLocation: false })] })
+
+    await user.click(screen.getByText(/detail.volunteersActive/))
+
+    expect(screen.getByLabelText('detail.liveLocation.noConsent')).toBeInTheDocument()
+  })
+
+  it('shows a muted pin for a consenting volunteer with no location fix yet', async () => {
+    const user = userEvent.setup()
+    renderTable({
+      volunteers: [approvedVolunteer({ consentLocation: true, lastLocation: null })],
+    })
+
+    await user.click(screen.getByText(/detail.volunteersActive/))
+
+    expect(screen.getByLabelText('detail.liveLocation.noFixYet')).toBeInTheDocument()
+  })
+
+  it('shows a live pin for a consenting, currently-tracked volunteer', async () => {
+    const user = userEvent.setup()
+    renderTable({
+      volunteers: [
+        approvedVolunteer({
+          consentLocation: true,
+          lastLocation: { lat: 41.9, lng: 12.5, recordedAt: '2026-08-20T10:00:00Z' },
+        }),
+      ],
+    })
+
+    await user.click(screen.getByText(/detail.volunteersActive/))
+
+    expect(screen.getByLabelText('detail.liveLocation.tracked')).toBeInTheDocument()
   })
 
   it('shows Live status for a recently active volunteer', async () => {

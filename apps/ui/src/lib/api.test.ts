@@ -102,6 +102,8 @@ describe('api.volunteers.listBySearch', () => {
               phone: '+390698765',
               resource_type: 'people',
               status: 'pending',
+              consent_location: true,
+              last_location: { lat: 41.9, lng: 12.5, recorded_at: '2026-08-20T10:00:00Z' },
               last_active_at: null,
               joined_at: '2026-08-01T10:00:00Z',
               approved_at: null,
@@ -121,6 +123,8 @@ describe('api.volunteers.listBySearch', () => {
         phone: '+390698765',
         resourceType: 'people',
         status: 'pending',
+        consentLocation: true,
+        lastLocation: { lat: 41.9, lng: 12.5, recordedAt: '2026-08-20T10:00:00Z' },
         lastActiveAt: null,
         joinedAt: '2026-08-01T10:00:00Z',
         approvedAt: null,
@@ -128,6 +132,62 @@ describe('api.volunteers.listBySearch', () => {
         segmentsSearched: 0,
       },
     ])
+  })
+
+  it('maps a null last_location to null', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: 'vol-2',
+              name: 'Luca Verdi',
+              phone: '+390698766',
+              resource_type: null,
+              status: 'approved',
+              consent_location: false,
+              last_location: null,
+              last_active_at: null,
+              joined_at: '2026-08-01T10:00:00Z',
+              approved_at: null,
+              removed_at: null,
+              segments_searched: 0,
+            },
+          ],
+        }),
+    })
+
+    const result = await api.volunteers.listBySearch('search-1')
+
+    expect(result[0].consentLocation).toBe(false)
+    expect(result[0].lastLocation).toBeNull()
+  })
+})
+
+describe('api.volunteers.getTrail', () => {
+  it('maps the volunteer breadcrumb trail', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            { id: 'loc-1', lat: 41.9, lng: 12.5, recorded_at: '2026-08-20T10:00:00Z' },
+            { id: 'loc-2', lat: 41.91, lng: 12.51, recorded_at: '2026-08-20T10:01:00Z' },
+          ],
+        }),
+    })
+
+    const result = await api.volunteers.getTrail('search-1', 'vol-1')
+
+    expect(result).toEqual([
+      { lat: 41.9, lng: 12.5, recordedAt: '2026-08-20T10:00:00Z' },
+      { lat: 41.91, lng: 12.51, recordedAt: '2026-08-20T10:01:00Z' },
+    ])
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toContain('/api/searches/search-1/volunteers/vol-1/locations')
   })
 })
 
@@ -212,6 +272,8 @@ describe('api.volunteers.setStatus', () => {
             phone: '+390698765',
             resource_type: 'people',
             status: 'approved',
+            consent_location: false,
+            last_location: null,
             last_active_at: null,
             joined_at: '2026-08-01T10:00:00Z',
             approved_at: '2026-08-01T10:05:00Z',

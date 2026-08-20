@@ -125,6 +125,17 @@ export function useCreateSearch() {
   })
 }
 
+// Fetched on demand (enabled: false by default), not polled — a
+// breadcrumb trail is for coverage review, not something that needs to
+// stay live while a coordinator has it open.
+export function useVolunteerTrail(searchId: string, volunteerId: string | null) {
+  return useQuery({
+    queryKey: ['volunteer-trail', searchId, volunteerId],
+    queryFn: () => api.volunteers.getTrail(searchId, volunteerId!),
+    enabled: volunteerId != null,
+  })
+}
+
 export function useSetVolunteerStatus(searchId: string) {
   const queryClient = useQueryClient()
   return useMutation({

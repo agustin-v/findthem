@@ -299,18 +299,42 @@ defmodule FindThemApi.MessagesTest do
     search: search,
     volunteer: volunteer
   } do
-    past = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:second)
+    # Exactly the search's own creation time, not an arbitrary hour-ago
+    # offset — the search in this test was itself just created moments
+    # ago, so a fixed "-3600s" offset would predate it and get clamped up
+    # by the new not-before-search-creation lower bound, defeating the
+    # point of this test (which is to prove a genuinely-in-the-past value
+    # is honored, not overridden).
+    past = search.inserted_at
 
     {:ok, message} =
       Messages.create_message(search.id, %{
         id: Ecto.UUID.generate(),
         volunteer_id: volunteer.id,
         sender: "volunteer",
-        text: "Composed offline an hour ago",
+        text: "Composed offline",
         sent_at: DateTime.to_iso8601(past)
       })
 
     assert DateTime.compare(message.sent_at, past) == :eq
+  end
+
+  test "create_message/2 clamps sent_at to not predate the search's own creation", %{
+    search: search,
+    volunteer: volunteer
+  } do
+    before_search = DateTime.add(search.inserted_at, -3600, :second)
+
+    {:ok, message} =
+      Messages.create_message(search.id, %{
+        id: Ecto.UUID.generate(),
+        volunteer_id: volunteer.id,
+        sender: "volunteer",
+        text: "Clock says before the search existed",
+        sent_at: DateTime.to_iso8601(before_search)
+      })
+
+    assert DateTime.compare(message.sent_at, search.inserted_at) == :eq
   end
 
   test "create_message/2 clamps a future sent_at to now instead of trusting a suspect client clock",

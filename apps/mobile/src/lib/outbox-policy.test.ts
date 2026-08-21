@@ -113,6 +113,11 @@ describe('classifyFlushFailure', () => {
     expect(result.status).toBe('retryable');
   });
 
+  it('classifies a 429 as retryable, not permanently rejected', () => {
+    const result = classifyFlushFailure({ kind: 'http', status: 429 });
+    expect(result.status).toBe('retryable');
+  });
+
   it('classifies a 401 as failed_permanent with a sign-in-again reason', () => {
     const result = classifyFlushFailure({ kind: 'http', status: 401 });
     expect(result.status).toBe('failed_permanent');

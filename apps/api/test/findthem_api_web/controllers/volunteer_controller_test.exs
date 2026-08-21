@@ -478,7 +478,11 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     search: search
   } do
     {_volunteer, token} = approved_volunteer(search)
-    sent_at = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:second)
+    # The search's own creation time, not an arbitrary hour-ago offset —
+    # this test search was itself just created, so a fixed "-3600s" offset
+    # would predate it and get clamped up by the not-before-search-
+    # creation lower bound instead of round-tripping unchanged.
+    sent_at = search.inserted_at
 
     conn =
       conn
@@ -486,7 +490,7 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
       |> post(~p"/volunteer/messages", %{
         "message" => %{
           "id" => Ecto.UUID.generate(),
-          "text" => "Composed offline an hour ago",
+          "text" => "Composed offline",
           "sent_at" => DateTime.to_iso8601(sent_at)
         }
       })

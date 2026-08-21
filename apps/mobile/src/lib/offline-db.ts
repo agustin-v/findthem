@@ -28,6 +28,20 @@ let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 // succeed while never landing anywhere a future getDb() call can find it.
 let generation = 0;
 
+// Exposed so callers outside this module (outbox.ts) can detect the same
+// class of race at their own layer, not just this module's own connection
+// handling — a resetOfflineStore() (identity boundary: sign-out, or a
+// different volunteer signing in on the same device) can land while an
+// outbox flush is mid-flight, between reading a fresh token and actually
+// sending a queued action's payload. Without a way to observe "has a reset
+// happened since I started this attempt", that flush would use the *new*
+// identity's token to send the *old* identity's queued payload — a
+// cross-identity write landing in the wrong volunteer's search. See
+// outbox.ts's attemptFlush for where this is actually checked.
+export function getGeneration(): number {
+  return generation;
+}
+
 // SQLCipher key: a random secret generated once and stored in SecureStore,
 // same shape as token.ts's own precedent (one small secret in the
 // Keychain/Keystore protecting a larger body of data) — this is the app's

@@ -123,6 +123,13 @@ export function classifyFlushFailure(failure: FlushFailure): FlushClassification
         };
       }
       return { status: 'failed_permanent', reason: 'This was rejected.' };
+    case 429:
+      // Rate-limited, not rejected — inherently transient (unlike a
+      // generic 4xx below), the same request will very likely succeed
+      // once the window resets. No endpoint the outbox currently uses is
+      // rate-limited (only /volunteer/location is), but classifying this
+      // correctly now avoids a silent regression the moment one is.
+      return { status: 'retryable', reason: 'Sending too fast — will retry automatically.' };
     default:
       if (failure.status != null && failure.status >= 500) {
         return { status: 'retryable', reason: 'Server error — will retry automatically.' };

@@ -3,6 +3,7 @@ defmodule FindThemApi.Messages do
 
   alias FindThemApi.Repo
   alias FindThemApi.Messages.Message
+  alias FindThemApi.Searches
   alias FindThemApi.Volunteers.Volunteer
 
   def list_by_search(search_id) do
@@ -28,11 +29,13 @@ defmodule FindThemApi.Messages do
   # safely — on_conflict: :nothing makes a replay with the same id a no-op
   # instead of a raised constraint error. Same pattern as Remarks.create_remark/2.
   def create_message(search_id, attrs) do
+    lower_bound = search_inserted_at(search_id)
+
     attrs =
       attrs
       |> Map.new(fn {k, v} -> {to_string(k), v} end)
       |> Map.put("search_id", search_id)
-      |> Map.update("sent_at", DateTime.utc_now(), &resolve_sent_at/1)
+      |> Map.update("sent_at", DateTime.utc_now(), &resolve_sent_at(&1, lower_bound))
 
     %Message{}
     |> Message.changeset(attrs)
@@ -41,15 +44,26 @@ defmodule FindThemApi.Messages do
     |> reload_and_broadcast(search_id, :message_created)
   end
 
+  defp search_inserted_at(search_id) do
+    case Searches.get_search(search_id) do
+      {:ok, search} -> search.inserted_at
+      {:error, :not_found} -> nil
+    end
+  end
+
   # sent_at is entirely client-supplied (Story #54's offline outbox — a
   # message composed while offline and synced hours later must record as
-  # having been sent then, not at sync time) — clamped to "not future"
-  # rather than rejected outright, same reasoning as Segments' occurred_at
-  # clamp: a suspect client clock shouldn't fail an otherwise-legitimate
-  # send, it should just get bounded. Falls back to now when absent
-  # entirely (the coordinator's existing send path doesn't supply this
-  # yet) or unparseable.
-  defp resolve_sent_at(value) do
+  # having been sent then, not at sync time) — clamped, not rejected
+  # outright, same reasoning as Segments' occurred_at clamp: a suspect
+  # client clock shouldn't fail an otherwise-legitimate send, it should
+  # just get bounded. Falls back to now when absent entirely (the
+  # coordinator's existing send path doesn't supply this yet) or
+  # unparseable. Lower-bounded by the search's own creation time — a
+  # message can't have been sent before the search it belongs to existed;
+  # without this, nothing stopped an arbitrarily-backdated sent_at, which
+  # would matter the moment any future feature (an export, an audit view)
+  # starts trusting it for display or ordering rather than inserted_at.
+  defp resolve_sent_at(value, lower_bound) do
     now = DateTime.utc_now()
 
     parsed =
@@ -67,7 +81,19 @@ defmodule FindThemApi.Messages do
           now
       end
 
-    if DateTime.compare(parsed, now) == :gt, do: now, else: parsed
+    parsed
+    |> clamp_not_before(lower_bound)
+    |> clamp_not_after(now)
+  end
+
+  defp clamp_not_before(dt, lower_bound) when not is_nil(lower_bound) do
+    if DateTime.compare(dt, lower_bound) == :lt, do: lower_bound, else: dt
+  end
+
+  defp clamp_not_before(dt, _lower_bound), do: dt
+
+  defp clamp_not_after(dt, now) do
+    if DateTime.compare(dt, now) == :gt, do: now, else: dt
   end
 
   defp validate_volunteer_in_search(changeset, search_id) do

@@ -236,19 +236,30 @@ export default function ChatScreen() {
         return;
       }
 
-      pendingSendRef.current = null;
       if (result.outcome === 'sent' && result.result) {
+        // Only cleared on a confirmed send — clearing it for 'retryable'
+        // too (as an earlier version of this code did) meant a volunteer
+        // who saw their message vanish with no feedback and retyped it
+        // would mint a *fresh* id for the retry instead of reusing the
+        // still-queued one, producing two separate outbox rows (message
+        // actions never coalesce) and eventually two duplicate messages
+        // once connectivity returned.
+        pendingSendRef.current = null;
         const sent = result.result as Message;
         // The message_created socket push can independently trigger a
         // loadMessages() that already includes this message before this
         // enqueue's own response comes back — append only if it isn't
         // there yet.
         setMessages((prev) => (prev.some((m) => m.id === sent.id) ? prev : [...prev, sent]));
+      } else {
+        // 'retryable' — durably queued, not lost, but not confirmed sent
+        // either: stays absent from the thread until a later flush
+        // succeeds (loadMessages/socket push), and pendingSendRef stays
+        // set so a volunteer who retypes the same text and hits send
+        // again reuses this id rather than double-queueing it. Surfaced
+        // (not silent) so the volunteer doesn't wonder where it went.
+        setSendError('No connection — queued, will send automatically.');
       }
-      // 'retryable': nothing further to append here — the message isn't
-      // confirmed sent yet, so it stays absent from the thread until a
-      // later flush succeeds (loadMessages/socket push) rather than
-      // showing as delivered when it might not be for hours.
     } catch {
       if (cancelledRef.current) return;
       setDraft((current) => (current ? current : text));

@@ -216,6 +216,18 @@ export default function MapScreen() {
   // loadMessagesSeqRef already uses in this file.
   const searchDataSeqRef = useRef(0);
 
+  // Per-segment sequence numbers, same reasoning as searchDataSeqRef —
+  // outbox.ts's own per-key serialization guarantees the *network*
+  // requests for one segment resolve in the order they were enqueued, but
+  // it doesn't control which *caller's* reconciliation code in this
+  // component happens to run last. A rapid double-tap on one segment
+  // (e.g. "in progress" then "searched" before the first request even
+  // returns) produces two separate handleSetSegmentStatus calls, each
+  // with its own `previous`/`result` closure; without this, the first
+  // call's slower-resolving reconciliation could stomp the second call's
+  // already-applied, more current optimistic state on its way through.
+  const segmentActionSeqRef = useRef(new Map<number, number>());
+
   // Story #54's outbox — every queued action not yet successfully sent,
   // regardless of status (pending/retryable/failed_permanent all count;
   // a failed_permanent one still needs the volunteer's attention, arguably
@@ -235,7 +247,7 @@ export default function MapScreen() {
   const wasOnlineRef = useRef(isOnline);
   useEffect(() => {
     if (isOnline && !wasOnlineRef.current) {
-      flushOutbox().then(refreshOutboxActions);
+      flushOutbox().then(refreshOutboxActions).catch(() => {});
     }
     wasOnlineRef.current = isOnline;
   }, [isOnline, refreshOutboxActions]);
@@ -244,7 +256,7 @@ export default function MapScreen() {
     if (!token) return undefined;
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        flushOutbox().then(refreshOutboxActions);
+        flushOutbox().then(refreshOutboxActions).catch(() => {});
       }
     });
     return () => subscription.remove();
@@ -263,14 +275,22 @@ export default function MapScreen() {
     getQueuedActions()
       .then(setOutboxActions)
       .then(() => flushOutbox())
-      .then(refreshOutboxActions);
+      .then(refreshOutboxActions)
+      .catch(() => {});
   }, [screenState, token, refreshOutboxActions]);
 
   const handleManualOutboxRetry = async () => {
     setOutboxRetrying(true);
-    await flushOutbox();
-    await refreshOutboxActions();
-    setOutboxRetrying(false);
+    try {
+      await flushOutbox();
+    } finally {
+      // In a finally, not just after the two awaits — a thrown error from
+      // either call must not leave this button stuck in its loading state
+      // forever (the same "stuck spinner" bug class this app has already
+      // hit and fixed once, in remark-form.tsx's own submitting flag).
+      await refreshOutboxActions().catch(() => {});
+      setOutboxRetrying(false);
+    }
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -619,6 +639,10 @@ export default function MapScreen() {
 
     applySegment(optimistic);
 
+    const segSeq = (segmentActionSeqRef.current.get(previous.segmentId) ?? 0) + 1;
+    segmentActionSeqRef.current.set(previous.segmentId, segSeq);
+    const isStale = () => segmentActionSeqRef.current.get(previous.segmentId) !== segSeq;
+
     // "Mark as searched" is the one status change that closes the sheet
     // and confirms first (see confirmMarkSearched below) — completing it
     // gets a full-screen acknowledgment instead of just updating a pill
@@ -640,7 +664,15 @@ export default function MapScreen() {
         generationId: generation?.id ?? null,
       });
 
-      if (result.outcome === 'sent' && result.result) {
+      // Skipped entirely if a newer call for this same segment has started
+      // since (isStale()) — that newer call owns the UI now, and this
+      // (slower, now-outdated) result must not overwrite it, whichever
+      // order the two actually resolve in.
+      if (isStale()) {
+        // Still nothing to do here — no UI to reconcile — but fall
+        // through to refreshOutboxActions() below so the badge stays
+        // accurate regardless of which call's result this is.
+      } else if (result.outcome === 'sent' && result.result) {
         // Reconciles the optimistic guess with what the server actually
         // persisted — server-clamped occurredAt, resolved lock state —
         // rather than trusting the local guess indefinitely.
@@ -657,6 +689,7 @@ export default function MapScreen() {
           // explicitly syncing it here the locked notice/disabled buttons
           // would never actually catch up.
           refreshSegments().then((freshSegments) => {
+            if (isStale()) return;
             const fresh = freshSegments?.find((s) => s.segmentId === previous.segmentId);
             if (fresh) applySegment(fresh);
           });
@@ -669,9 +702,13 @@ export default function MapScreen() {
     } catch {
       // Genuinely unexpected (e.g. the local queue itself failed to
       // persist) — roll back rather than leave the UI claiming success
-      // for an action nothing durable actually recorded.
-      applySegment(previous);
-      setSegmentActionError('Could not update this segment. Please try again.');
+      // for an action nothing durable actually recorded. Same staleness
+      // guard as above — a newer call for this segment already owns the
+      // UI if one has started since.
+      if (!isStale()) {
+        applySegment(previous);
+        setSegmentActionError('Could not update this segment. Please try again.');
+      }
     } finally {
       setUpdatingSegment(false);
     }

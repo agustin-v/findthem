@@ -176,4 +176,22 @@ export async function resetOfflineStore(): Promise<void> {
     // data behind with no record it happened.
     if (__DEV__) console.warn('resetOfflineStore failed', error);
   });
+
+  // Downloaded map tiles are a per-identity artifact same as the SQLite
+  // store above — this app only ever has one volunteer/search active at a
+  // time, so on every identity-boundary reset every existing pack belongs
+  // to whoever is no longer current. Imported dynamically, not as a static
+  // top-level import — offline-tiles.ts pulls in
+  // @maplibre/maplibre-react-native, which throws at *module-evaluation*
+  // time on web (its native module binding is `TurboModuleRegistry.
+  // getEnforcing`, not a lazy/optional lookup), and this file is imported
+  // by several web-reachable screens (index.tsx, pending.tsx,
+  // join/[code].tsx), not just map.tsx. A static import here would crash
+  // `pnpm web` on every one of those screens before this function's own
+  // Platform.OS check ever runs; a dynamic import's target module is only
+  // evaluated once actually awaited, which this branch guarantees never
+  // happens on web. deleteAllTilePacks() is already best-effort internally
+  // (see offline-tiles.ts), so no extra .catch here.
+  const { deleteAllTilePacks } = await import('@/lib/offline-tiles');
+  await deleteAllTilePacks();
 }

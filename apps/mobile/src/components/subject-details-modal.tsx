@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { MessageCircle, Phone } from 'lucide-react-native';
-import { Linking, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Check, Download, MessageCircle, Phone, Trash2 } from 'lucide-react-native';
+import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '@/components/primary-button';
@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import type { OfflineTilesController } from '@/hooks/useOfflineTiles';
 import type { VolunteerSearchInfo } from '@/lib/api';
 
 interface SubjectDetailsModalProps {
@@ -17,6 +18,7 @@ interface SubjectDetailsModalProps {
   onOpenPhotos: () => void;
   onOpenChat: () => void;
   unreadMessageCount: number;
+  offlineTiles: OfflineTilesController;
 }
 
 // subject_details is a free-form JSON map on the backend (its shape
@@ -71,6 +73,7 @@ export function SubjectDetailsModal({
   onOpenPhotos,
   onOpenChat,
   unreadMessageCount,
+  offlineTiles,
 }: SubjectDetailsModalProps) {
   const theme = useTheme();
   const details = search.subjectDetails;
@@ -198,6 +201,93 @@ export function SubjectDetailsModal({
                 </>
               )}
 
+              <ThemedText type="code" themeColor="textSecondary" style={styles.sectionLabel}>
+                Offline map
+              </ThemedText>
+              <ThemedView type="backgroundElement" style={[styles.card, styles.offlineCard, { borderColor: theme.border }]}>
+                {offlineTiles.state === 'checking' && (
+                  <View style={styles.offlineRow}>
+                    <ActivityIndicator size="small" color={theme.textSecondary} />
+                    <ThemedText themeColor="textSecondary">Checking for a downloaded map…</ThemedText>
+                  </View>
+                )}
+
+                {offlineTiles.state === 'not_downloaded' && !offlineTiles.hasGeometry && (
+                  <ThemedText themeColor="textSecondary">
+                    The search area isn&apos;t ready yet — check back once segments have been generated.
+                  </ThemedText>
+                )}
+
+                {offlineTiles.state === 'not_downloaded' && offlineTiles.hasGeometry && (
+                  <>
+                    <ThemedText themeColor="textSecondary">
+                      {offlineTiles.tooLarge
+                        ? 'This search area is too large to download offline.'
+                        : offlineTiles.estimateTileCount != null
+                          ? `Download the map for this search area (~${offlineTiles.estimateTileCount.toLocaleString()} tiles) so it still loads with no signal.`
+                          : 'Download the map for this search area so it still loads with no signal.'}
+                    </ThemedText>
+                    {!offlineTiles.tooLarge && (
+                      <Pressable
+                        accessibilityRole="button"
+                        style={[styles.offlineButton, { backgroundColor: theme.primarySoft }]}
+                        onPress={offlineTiles.download}>
+                        <Download color={theme.primary} size={16} />
+                        <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                          Download for offline use
+                        </ThemedText>
+                      </Pressable>
+                    )}
+                  </>
+                )}
+
+                {offlineTiles.state === 'downloading' && (
+                  <View style={styles.offlineRow}>
+                    <ActivityIndicator size="small" color={theme.primary} />
+                    <ThemedText themeColor="textSecondary">
+                      {offlineTiles.progress
+                        ? `Downloading… ${Math.round(offlineTiles.progress.percentage)}%`
+                        : 'Downloading…'}
+                    </ThemedText>
+                  </View>
+                )}
+
+                {offlineTiles.state === 'downloaded' && (
+                  <>
+                    <View style={styles.offlineRow}>
+                      <Check color={theme.primary} size={16} />
+                      <ThemedText themeColor="textSecondary">Downloaded for offline use</ThemedText>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      style={[styles.offlineButton, { backgroundColor: theme.primarySoft }]}
+                      onPress={offlineTiles.remove}>
+                      <Trash2 color={theme.primary} size={16} />
+                      <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                        Remove download
+                      </ThemedText>
+                    </Pressable>
+                  </>
+                )}
+
+                {offlineTiles.state === 'error' && (
+                  <>
+                    <ThemedText themeColor="textSecondary">
+                      {offlineTiles.errorMessage ?? 'Download failed.'}
+                    </ThemedText>
+                    <Pressable
+                      accessibilityRole="button"
+                      style={[styles.offlineButton, { backgroundColor: theme.primarySoft }]}
+                      onPress={offlineTiles.download}>
+                      <Download color={theme.primary} size={16} />
+                      <ThemedText type="smallBold" style={{ color: theme.primary }}>
+                        Try again
+                      </ThemedText>
+                    </Pressable>
+                  </>
+                )}
+              </ThemedView>
+
               <PrimaryButton label="Close" variant="secondary" onPress={onClose} />
             </ScrollView>
           </SafeAreaView>
@@ -278,6 +368,25 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
+  },
+  offlineCard: {
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  offlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  offlineButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    borderRadius: Radius.pill,
+    paddingVertical: Spacing.two,
+    alignSelf: 'flex-start',
+    paddingHorizontal: Spacing.three,
   },
   coordinatorRow: {
     flexDirection: 'row',

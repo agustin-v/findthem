@@ -24,6 +24,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import { useLocationReporting } from '@/hooks/useLocationReporting';
+import { useOfflineTiles } from '@/hooks/useOfflineTiles';
 import { useTheme } from '@/hooks/use-theme';
 import {
   getVolunteerMessages,
@@ -567,6 +568,8 @@ export default function MapScreen() {
       ),
     [generation, segments, mySegmentIds],
   );
+
+  const offlineTiles = useOfflineTiles(search?.id ?? null, generation?.segments ?? null);
 
   // Only remarks with a real position render — some volunteer-authored
   // ones won't have one (GPS denied/failed).
@@ -1224,6 +1227,7 @@ export default function MapScreen() {
           });
         }}
         unreadMessageCount={unreadMessageCount}
+        offlineTiles={offlineTiles}
       />
     </ThemedView>
   );

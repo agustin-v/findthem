@@ -48,13 +48,29 @@ cors_origins =
 
 config :findthem_api, :cors_origins, cors_origins
 
-# Same allowlist gates the websocket upgrade (UserSocket, mounted at
-# /socket) as gates plain HTTP CORS — Phoenix's check_origin accepts the
-# identical shape (strings/regexes) cors_origins is already built from.
-# Left unset, check_origin defaults to matching the endpoint's own :url
-# host only, which would reject the coordinator UI's real origin the
-# moment it's deployed anywhere other than the same host as the API.
-config :findthem_api, FindThemApiWeb.Endpoint, check_origin: cors_origins
+# Same allowlist is meant to gate the websocket upgrade (UserSocket, mounted
+# at /socket) as gates plain HTTP CORS. Left unset, check_origin defaults to
+# matching the endpoint's own :url host only, which would reject the
+# coordinator UI's real origin the moment it's deployed anywhere other than
+# the same host as the API.
+#
+# Only applied when CORS_ORIGINS was actually provided (prod/staging) —
+# Phoenix's check_origin does NOT accept the same shapes CORSPlug's `origin`
+# does. CORSPlug supports a raw Regex; Phoenix's check_origin only accepts
+# strings, {scheme, host, port} tuples, an MFA, or a boolean, and calls
+# URI.parse/1 directly on each configured entry. Reusing the dev-only
+# fallback above (a Regex, valid for CORSPlug alone) here crashed every
+# single socket upgrade with a FunctionClauseError in URI.parse/1 — 100% of
+# WebSocket connections failing silently in dev, with every realtime path
+# (chat, segment updates, remarks, location, roster) falling back to REST
+# polling the whole time. Caught by reproducing an end-to-end socket
+# connection (a raw WS handshake returned 500) rather than assumed from
+# reading the config alone. Leaving check_origin untouched when
+# CORS_ORIGINS is unset lets config/dev.exs's own `check_origin: false`
+# apply instead, matching that file's actual intent.
+if System.get_env("CORS_ORIGINS") do
+  config :findthem_api, FindThemApiWeb.Endpoint, check_origin: cors_origins
+end
 
 # Clerk issuer + JWKS URL aren't secret (they're embedded in every session JWT / the
 # publishable key); dev defaults point at the FindThem dev Clerk instance.

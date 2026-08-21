@@ -22,15 +22,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import {
-  ApiError,
-  getVolunteerMessages,
-  isAuthError,
-  sendVolunteerMessage,
-  type Message,
-} from '@/lib/api';
+import { getVolunteerMessages, isAuthError, type Message } from '@/lib/api';
 import { markReadUpTo, resetChatReadState } from '@/lib/chat-read-state';
 import { resetOfflineStore } from '@/lib/offline-cache';
+import { enqueueMessage } from '@/lib/outbox';
 import { getSocket, resetSocket } from '@/lib/socket';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
 
@@ -217,31 +212,47 @@ export default function ChatScreen() {
     pendingSendRef.current = { id, text };
 
     try {
-      const sent = await sendVolunteerMessage(token, { id, text });
-      pendingSendRef.current = null;
+      // enqueueMessage persists durably before attempting the network —
+      // a retryable (offline) outcome still means the message is safely
+      // queued, not lost; the draft is already cleared and the outbox
+      // badge on map.tsx is where an unsent message becomes visible.
+      const result = await enqueueMessage({ id, text, sentAt: new Date().toISOString() });
       if (cancelledRef.current) return;
-      // The message_created socket push can independently trigger a
-      // loadMessages() that already includes this message before this
-      // POST's own response comes back — append only if it isn't there yet.
-      setMessages((prev) => (prev.some((m) => m.id === sent.id) ? prev : [...prev, sent]));
-    } catch (error) {
-      if (isAuthError(error)) {
-        // Checked before the cancelled guard below — a removed volunteer
-        // must still be signed out even if they tapped back while the
-        // send was in flight.
+
+      if (result.authExpired) {
+        // Checked before anything else — a removed volunteer must still
+        // be signed out even if they tapped back while the send was in
+        // flight.
         pendingSendRef.current = null;
         await handleAuthExpired();
         return;
       }
+
+      if (result.outcome === 'failed_permanent') {
+        // Restored only if nothing newer was typed in the meantime —
+        // don't clobber text the volunteer already moved on to composing.
+        setDraft((current) => (current ? current : text));
+        setSendError(result.reason ?? 'Could not send. Please try again.');
+        return;
+      }
+
+      pendingSendRef.current = null;
+      if (result.outcome === 'sent' && result.result) {
+        const sent = result.result as Message;
+        // The message_created socket push can independently trigger a
+        // loadMessages() that already includes this message before this
+        // enqueue's own response comes back — append only if it isn't
+        // there yet.
+        setMessages((prev) => (prev.some((m) => m.id === sent.id) ? prev : [...prev, sent]));
+      }
+      // 'retryable': nothing further to append here — the message isn't
+      // confirmed sent yet, so it stays absent from the thread until a
+      // later flush succeeds (loadMessages/socket push) rather than
+      // showing as delivered when it might not be for hours.
+    } catch {
       if (cancelledRef.current) return;
-      // Restored only if nothing newer was typed in the meantime — don't
-      // clobber text the volunteer already moved on to composing.
       setDraft((current) => (current ? current : text));
-      setSendError(
-        error instanceof ApiError
-          ? 'Could not send. Please try again.'
-          : 'Something went wrong. Please check your connection and try again.',
-      );
+      setSendError('Something went wrong. Please check your connection and try again.');
     } finally {
       if (!cancelledRef.current) setSending(false);
     }

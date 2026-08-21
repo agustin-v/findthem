@@ -159,6 +159,7 @@ describe('getVolunteerSearch', () => {
             },
             segments: [{ segment_id: 0, status: 'not_assigned', searched_at: null }],
             generation: {
+              id: 'gen-1',
               response: {
                 segments: {
                   type: 'FeatureCollection',
@@ -215,6 +216,7 @@ describe('getVolunteerSearch', () => {
         lockReason: null,
       },
     ]);
+    expect(result.generation?.id).toBe('gen-1');
     expect(result.generation?.segments.features).toHaveLength(1);
     expect(result.mySegmentIds).toEqual([0]);
     // Every remark on the search, not just this volunteer's own (Story 37) —
@@ -378,6 +380,28 @@ describe('updateSegmentStatus', () => {
     expect(result.lockReason).toBe('bridge is out');
   });
 
+  it('includes occurred_at and generation_id when provided (offline outbox replay)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: { segment_id: 0, status: 'searched', searched_at: '2026-08-04T09:00:00Z' },
+        }),
+    });
+
+    await updateSegmentStatus('the-token', 0, 'searched', {
+      occurredAt: '2026-08-04T09:00:00Z',
+      generationId: 'gen-1',
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      status: 'searched',
+      occurred_at: '2026-08-04T09:00:00Z',
+      generation_id: 'gen-1',
+    });
+  });
+
   it('throws an ApiError with the segment-locked detail on a 409', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
@@ -506,6 +530,7 @@ describe('getVolunteerMessages', () => {
         volunteerId: 'vol-1',
         sender: 'coordinator',
         text: 'Cleared for Zone B-4',
+        sentAt: null,
         insertedAt: '2026-08-01T09:32:00Z',
       },
     ]);
@@ -544,6 +569,34 @@ describe('sendVolunteerMessage', () => {
     // sender is never sent from the client — the backend forces it from
     // the authenticated identity (VolunteerMessageController.create).
     expect(body.message.sender).toBeUndefined();
+  });
+
+  it('includes sent_at when provided (offline outbox replay)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: {
+            id: 'msg-2',
+            search_id: 'search-1',
+            volunteer_id: 'vol-1',
+            sender: 'volunteer',
+            text: 'Composed offline',
+            sent_at: '2026-08-01T08:00:00Z',
+            inserted_at: '2026-08-01T09:33:00Z',
+          },
+        }),
+    });
+
+    const result = await sendVolunteerMessage('the-token', {
+      id: 'msg-2',
+      text: 'Composed offline',
+      sentAt: '2026-08-01T08:00:00Z',
+    });
+
+    expect(result.sentAt).toBe('2026-08-01T08:00:00Z');
+    const [, init] = mockFetch.mock.calls[0];
+    expect(JSON.parse(init.body).message.sent_at).toBe('2026-08-01T08:00:00Z');
   });
 });
 

@@ -10,7 +10,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import { useLocationPermission } from '@/hooks/useLocationPermission';
-import { ApiError, createRemark, type RemarkKind } from '@/lib/api';
+import type { RemarkKind } from '@/lib/api';
+import { enqueueRemark } from '@/lib/outbox';
 import { useTheme } from '@/hooks/use-theme';
 import { getCurrentCoords } from '@/lib/location';
 
@@ -22,12 +23,11 @@ const REMARK_KINDS: { value: RemarkKind; label: string; icon: typeof Eye }[] = [
 
 interface RemarkFormProps {
   visible: boolean;
-  token: string;
   onClose: () => void;
   onSubmitted: () => void;
 }
 
-export function RemarkForm({ visible, token, onClose, onSubmitted }: RemarkFormProps) {
+export function RemarkForm({ visible, onClose, onSubmitted }: RemarkFormProps) {
   const theme = useTheme();
   const { status: locationStatus, request: requestLocation } = useLocationPermission();
   const [kind, setKind] = useState<RemarkKind>('sighting');
@@ -60,7 +60,13 @@ export function RemarkForm({ visible, token, onClose, onSubmitted }: RemarkFormP
       const coords = locationStatus === 'granted' ? await getCurrentCoords() : null;
       if (cancelledRef.current) return;
 
-      await createRemark(token, {
+      // enqueueRemark persists durably before attempting the network —
+      // even a "failed" outcome below means the report survived on disk,
+      // not that it was lost. Only a definitive failed_permanent (401)
+      // keeps the form open with an error; a retryable (offline) outcome
+      // still closes the form, since the report is already safely queued
+      // and will send on the next sync trigger.
+      const result = await enqueueRemark({
         id: Crypto.randomUUID(),
         kind,
         text: text.trim() || undefined,
@@ -70,15 +76,17 @@ export function RemarkForm({ visible, token, onClose, onSubmitted }: RemarkFormP
       });
       if (cancelledRef.current) return;
 
+      if (result.outcome === 'failed_permanent') {
+        setError(result.reason ?? 'Could not submit this report. Please try again.');
+        setSubmitting(false);
+        return;
+      }
+
       handleClose();
       onSubmitted();
-    } catch (err) {
+    } catch {
       if (cancelledRef.current) return;
-      setError(
-        err instanceof ApiError
-          ? 'Could not submit this report. Please try again.'
-          : 'Something went wrong. Please check your connection and try again.',
-      );
+      setError('Something went wrong. Please check your connection and try again.');
       setSubmitting(false);
     }
   };

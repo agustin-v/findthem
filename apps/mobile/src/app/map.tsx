@@ -9,11 +9,11 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
-import { Check, ChevronRight, MessageCircle, Plus } from 'lucide-react-native';
+import { CloudOff, Check, ChevronRight, MessageCircle, Plus } from 'lucide-react-native';
 import type { Channel } from 'phoenix';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '@/components/primary-button';
@@ -26,11 +26,9 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useLocationReporting } from '@/hooks/useLocationReporting';
 import { useTheme } from '@/hooks/use-theme';
 import {
-  ApiError,
   getVolunteerMessages,
   getVolunteerSearch,
   isAuthError,
-  updateSegmentStatus,
   type Message,
   type Remark,
   type VolunteerGeneration,
@@ -44,6 +42,7 @@ import {
   resetOfflineStore,
   setCachedVolunteerSearch,
 } from '@/lib/offline-cache';
+import { enqueueMarkSegment, flushOutbox, getQueuedActions, type OutboxAction } from '@/lib/outbox';
 import { getSocket, resetSocket } from '@/lib/socket';
 import { getMapStyleUrl, hasApiKey } from '@/lib/tomtom';
 import { clearVolunteerToken, getVolunteerToken } from '@/lib/token';
@@ -112,6 +111,32 @@ function formatElapsed(iso: string | null): string | null {
   if (hours < 1) return `${Math.floor(ms / 60000)}m`;
   if (hours < 48) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+// Payload content, not just a count — Story #54 wants the queued-actions
+// list to show what's actually about to be sent on the volunteer's
+// behalf, not just "1 segment update".
+function describeOutboxAction(action: OutboxAction): string {
+  switch (action.type) {
+    case 'mark_segment': {
+      const payload = action.payload as { segmentId: number; status: SegmentStatus };
+      return `Segment ${payload.segmentId} → ${STATUS_LABELS[payload.status]}`;
+    }
+    case 'remark': {
+      const payload = action.payload as { kind: string; text?: string };
+      return payload.text ? `Report (${payload.kind}): ${payload.text}` : `Report (${payload.kind})`;
+    }
+    case 'message': {
+      const payload = action.payload as { text: string };
+      return `Message: ${payload.text}`;
+    }
+  }
+}
+
+function outboxStatusLabel(action: OutboxAction): string {
+  if (action.status === 'failed_permanent') return action.failureReason ?? 'Failed';
+  if (action.status === 'retryable') return 'Waiting for connection';
+  return 'Queued';
 }
 
 function toSegmentModel(segment: VolunteerSegment): SegmentStatusInfo {
@@ -190,6 +215,64 @@ export default function MapScreen() {
   // after it. Same "sequence number, not just an in-flight flag" pattern
   // loadMessagesSeqRef already uses in this file.
   const searchDataSeqRef = useRef(0);
+
+  // Story #54's outbox — every queued action not yet successfully sent,
+  // regardless of status (pending/retryable/failed_permanent all count;
+  // a failed_permanent one still needs the volunteer's attention, arguably
+  // more than a merely-queued one).
+  const [outboxActions, setOutboxActions] = useState<OutboxAction[]>([]);
+  const [outboxListOpen, setOutboxListOpen] = useState(false);
+  const [outboxRetrying, setOutboxRetrying] = useState(false);
+  const refreshOutboxActions = useCallback(async () => {
+    setOutboxActions(await getQueuedActions());
+  }, []);
+
+  // Sync triggers, per Story #54: a NetInfo online transition, an
+  // AppState foreground event, and (below, in the outbox list modal) a
+  // manual retry — this screen has no scrollable surface a literal
+  // pull-to-refresh gesture would attach to (it's a map), so "manual" is a
+  // button in the queued-actions list instead, same intent.
+  const wasOnlineRef = useRef(isOnline);
+  useEffect(() => {
+    if (isOnline && !wasOnlineRef.current) {
+      flushOutbox().then(refreshOutboxActions);
+    }
+    wasOnlineRef.current = isOnline;
+  }, [isOnline, refreshOutboxActions]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        flushOutbox().then(refreshOutboxActions);
+      }
+    });
+    return () => subscription.remove();
+  }, [token, refreshOutboxActions]);
+
+  // A cold start with actions already queued from a previous session
+  // (app killed while offline, never got a chance to flush) needs its own
+  // attempt — neither trigger above fires just from the screen becoming
+  // ready.
+  useEffect(() => {
+    if (screenState !== 'ready' || !token) return;
+    // Populates the badge from whatever's already on disk immediately,
+    // then reconciles once the flush attempt (which may take up to the
+    // request timeout if offline) resolves — same "read first, then
+    // reconcile" shape as map.tsx's own cache-first live-fetch effect.
+    getQueuedActions()
+      .then(setOutboxActions)
+      .then(() => flushOutbox())
+      .then(refreshOutboxActions);
+  }, [screenState, token, refreshOutboxActions]);
+
+  const handleManualOutboxRetry = async () => {
+    setOutboxRetrying(true);
+    await flushOutbox();
+    await refreshOutboxActions();
+    setOutboxRetrying(false);
+  };
+
   const [messages, setMessages] = useState<Message[]>([]);
   // Bumped on focus (e.g. returning from /chat, which has just called
   // markReadUpTo) so unreadCount below recomputes against the latest
@@ -512,47 +595,83 @@ export default function MapScreen() {
     setUpdatingSegment(true);
     setSegmentActionError(null);
 
-    try {
-      const updated = await updateSegmentStatus(token, selectedSegment.segmentId, status);
+    const previous = selectedSegment;
+    const occurredAt = new Date().toISOString();
+    // Optimistic — reflects the tap immediately, online or offline, per
+    // Story #54's own requirement. The eventual outcome (queued, sent, or
+    // rejected) reconciles or rolls this back below; the volunteer isn't
+    // left staring at a spinner for a request that may be sitting in an
+    // offline queue for hours.
+    const optimistic: VolunteerSegment = {
+      ...previous,
+      status,
+      searchedAt: status === 'searched' ? occurredAt : null,
+    };
+    const applySegment = (segment: VolunteerSegment) => {
       setSegments((prev) => {
-        const exists = prev.some((s) => s.segmentId === updated.segmentId);
+        const exists = prev.some((s) => s.segmentId === segment.segmentId);
         return exists
-          ? prev.map((s) => (s.segmentId === updated.segmentId ? updated : s))
-          : [...prev, updated];
+          ? prev.map((s) => (s.segmentId === segment.segmentId ? segment : s))
+          : [...prev, segment];
       });
-      setSelectedSegment(updated);
+      setSelectedSegment((current) => (current?.segmentId === segment.segmentId ? segment : current));
+    };
 
-      // "Mark as searched" is the one status change that closes the sheet
-      // and confirms first (see confirmMarkSearched below) — completing it
-      // gets a full-screen acknowledgment instead of just updating a pill
-      // in place, since it's the volunteer's signal that this area is done.
-      if (status === 'searched') {
-        setConfirmMarkSearched(false);
-        setAreaSearchedSuccess(true);
-      }
-    } catch (error) {
-      // A locked segment (409, reserved for a different volunteer) gets its
-      // own message — relevant both for this direct tap and, later, for a
-      // queued offline action (#54) that fails to sync because the segment
-      // got locked in the meantime. Refresh so the sheet's own locked state
-      // catches up and the disabled buttons reflect reality immediately,
-      // instead of the volunteer retrying the same blocked action.
-      if (error instanceof ApiError && error.status === 409 && error.errors?.segment) {
-        setSegmentActionError('This segment is locked for another volunteer right now.');
-        // refreshSegments() alone only updates the top-level segments array
-        // (and the map's own layer) — the still-open sheet reads from
-        // selectedSegment, a separate piece of state, so without explicitly
-        // syncing it here the locked notice/disabled buttons would never
-        // actually catch up and the volunteer could just keep retrying the
-        // same blocked action.
-        refreshSegments().then((freshSegments) => {
-          const fresh = freshSegments?.find((s) => s.segmentId === selectedSegment.segmentId);
-          if (fresh) setSelectedSegment(fresh);
-        });
-      } else {
-        setSegmentActionError('Could not update this segment. Please try again.');
-      }
+    applySegment(optimistic);
+
+    // "Mark as searched" is the one status change that closes the sheet
+    // and confirms first (see confirmMarkSearched below) — completing it
+    // gets a full-screen acknowledgment instead of just updating a pill
+    // in place, since it's the volunteer's signal that this area is done.
+    // Fires on the optimistic apply, not after a live response — offline,
+    // there may not be one for hours; a rejection (locked, stale
+    // generation) is surfaced later via the outbox badge, not by blocking
+    // this acknowledgment.
+    if (status === 'searched') {
       setConfirmMarkSearched(false);
+      setAreaSearchedSuccess(true);
+    }
+
+    try {
+      const result = await enqueueMarkSegment({
+        segmentId: previous.segmentId,
+        status,
+        occurredAt,
+        generationId: generation?.id ?? null,
+      });
+
+      if (result.outcome === 'sent' && result.result) {
+        // Reconciles the optimistic guess with what the server actually
+        // persisted — server-clamped occurredAt, resolved lock state —
+        // rather than trusting the local guess indefinitely.
+        applySegment(result.result as VolunteerSegment);
+      } else if (result.outcome === 'failed_permanent') {
+        // A rejected mark must not keep showing as done on the
+        // volunteer's own map — roll back to what it actually was.
+        applySegment(previous);
+        setSegmentActionError(result.reason ?? 'Could not update this segment.');
+        if (result.reason && /locked/i.test(result.reason)) {
+          // refreshSegments() alone only updates the top-level segments
+          // array (and the map's own layer) — the still-open sheet reads
+          // from selectedSegment, a separate piece of state, so without
+          // explicitly syncing it here the locked notice/disabled buttons
+          // would never actually catch up.
+          refreshSegments().then((freshSegments) => {
+            const fresh = freshSegments?.find((s) => s.segmentId === previous.segmentId);
+            if (fresh) applySegment(fresh);
+          });
+        }
+      }
+      // 'retryable': keep the optimistic state as-is — the outbox badge is
+      // where this becomes visible, and the next sync trigger (online
+      // transition, foreground, pull-to-refresh) retries automatically.
+      refreshOutboxActions();
+    } catch {
+      // Genuinely unexpected (e.g. the local queue itself failed to
+      // persist) — roll back rather than leave the UI claiming success
+      // for an action nothing durable actually recorded.
+      applySegment(previous);
+      setSegmentActionError('Could not update this segment. Please try again.');
     } finally {
       setUpdatingSegment(false);
     }
@@ -752,6 +871,21 @@ export default function MapScreen() {
           </Pressable>
         )}
 
+        {outboxActions.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${outboxActions.length} action${outboxActions.length === 1 ? '' : 's'} waiting to sync`}
+            onPress={() => setOutboxListOpen(true)}
+            style={[styles.fab, styles.outboxFab, { backgroundColor: theme.backgroundElement }]}>
+            <CloudOff color={theme.text} size={22} />
+            <View style={[styles.unreadBadge, { backgroundColor: theme.primary }]}>
+              <ThemedText type="small" style={styles.unreadBadgeText}>
+                {outboxActions.length}
+              </ThemedText>
+            </View>
+          </Pressable>
+        )}
+
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Report something"
@@ -904,6 +1038,46 @@ export default function MapScreen() {
       </Modal>
 
       <Modal
+        visible={outboxListOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setOutboxListOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setOutboxListOpen(false)}>
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            <ThemedView style={styles.sheet}>
+              <SafeAreaView style={styles.sheetContent}>
+                <View style={styles.sheetHandle} />
+                <ThemedText type="subtitle">Waiting to sync</ThemedText>
+                {outboxActions.length === 0 ? (
+                  <ThemedText themeColor="textSecondary">Nothing queued.</ThemedText>
+                ) : (
+                  outboxActions.map((action) => (
+                    <View key={action.id} style={styles.outboxRow}>
+                      <ThemedText type="smallBold">{describeOutboxAction(action)}</ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {outboxStatusLabel(action)}
+                      </ThemedText>
+                    </View>
+                  ))
+                )}
+                <PrimaryButton
+                  label="Retry now"
+                  onPress={handleManualOutboxRetry}
+                  loading={outboxRetrying}
+                  disabled={outboxActions.length === 0}
+                />
+                <PrimaryButton
+                  label="Close"
+                  variant="secondary"
+                  onPress={() => setOutboxListOpen(false)}
+                />
+              </SafeAreaView>
+            </ThemedView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
         visible={confirmMarkSearched}
         animationType="fade"
         transparent
@@ -982,9 +1156,11 @@ export default function MapScreen() {
       {token && (
         <RemarkForm
           visible={remarkFormOpen}
-          token={token}
           onClose={() => setRemarkFormOpen(false)}
-          onSubmitted={refreshSegments}
+          onSubmitted={() => {
+            refreshSegments();
+            refreshOutboxActions();
+          }}
         />
       )}
 
@@ -1101,6 +1277,15 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
   },
+  outboxFab: {
+    // Always the slot above the chat FAB, whether or not the chat FAB
+    // itself is currently rendered (messages.length === 0 hides it) — a
+    // little unused space when chat is hidden is preferable to
+    // recomputing this position conditionally.
+    bottom: Spacing.four + 56 + Spacing.two + 48 + Spacing.two,
+    width: 44,
+    height: 44,
+  },
   unreadBadge: {
     position: 'absolute',
     top: -4,
@@ -1142,6 +1327,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  outboxRow: {
+    gap: 2,
+    paddingVertical: Spacing.one,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(128,128,128,0.15)',
   },
   statusPill: {
     borderRadius: Radius.pill,

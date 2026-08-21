@@ -168,6 +168,12 @@ export interface VolunteerSegment {
 // needs to reconstruct geometry client-side (unlike the old h3-js-based
 // per-cell zones, this is real GeoJSON straight from apps/geo).
 export interface VolunteerGeneration {
+  // The generation's own id — Story #54's outbox stamps this onto a
+  // queued mark_segment action at enqueue time, so the backend can reject
+  // a stale replay (a segment_id reused by a since-regenerated,
+  // physically different polygon) instead of silently marking the wrong
+  // one searched.
+  id: string;
   segments: FeatureCollection<Polygon | MultiPolygon, SegmentProperties>;
 }
 
@@ -197,6 +203,7 @@ interface RemoteSegment {
 }
 
 interface RemoteGeneration {
+  id: string;
   response: {
     segments: FeatureCollection<Polygon | MultiPolygon, SegmentProperties>;
   };
@@ -254,24 +261,45 @@ export async function getVolunteerSearch(token: string): Promise<VolunteerSearch
       photoUrls: data.search.photo_urls,
     },
     segments: data.segments.map(mapVolunteerSegment),
-    generation: data.generation ? { segments: data.generation.response.segments } : null,
+    generation: data.generation
+      ? { id: data.generation.id, segments: data.generation.response.segments }
+      : null,
     mySegmentIds: data.my_segment_ids,
     remarks: data.remarks?.map(mapRemark) ?? [],
     consentLocation: data.consent_location ?? false,
   };
 }
 
+export interface UpdateSegmentStatusOptions {
+  // Client-supplied, server-clamped (Story #54's offline outbox) — when
+  // this action was actually performed, not when it happened to sync.
+  // Omitted for a live, in-the-moment tap (the backend falls back to its
+  // own receipt time, same as before this option existed).
+  occurredAt?: string;
+  // The generation that was current when this action was enqueued — the
+  // backend rejects a mismatch against the search's *current* generation
+  // as stale (409) rather than silently marking a since-regenerated,
+  // physically different polygon as searched. Omitted for a live write,
+  // where the race this guards against is milliseconds, not hours.
+  generationId?: string;
+}
+
 export async function updateSegmentStatus(
   token: string,
   segmentId: number,
   status: SegmentStatus,
+  options: UpdateSegmentStatusOptions = {},
 ): Promise<VolunteerSegment> {
   const { data } = await request<{ data: RemoteSegment }>(
     `/volunteer/segments/${segmentId}`,
     {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        occurred_at: options.occurredAt,
+        generation_id: options.generationId,
+      }),
     },
   );
 
@@ -374,6 +402,11 @@ export interface Message {
   volunteerId: string;
   sender: MessageSender;
   text: string;
+  // Client-supplied, server-clamped (Story #54's offline outbox) — when
+  // the volunteer actually sent this, not when it happened to sync.
+  // Optional since the coordinator's own send path doesn't set this yet
+  // (the backend falls back to its own receipt time).
+  sentAt: string | null;
   insertedAt: string;
 }
 
@@ -383,6 +416,7 @@ interface RemoteMessage {
   volunteer_id: string;
   sender: MessageSender;
   text: string;
+  sent_at: string | null;
   inserted_at: string;
 }
 
@@ -393,6 +427,7 @@ function mapMessage(remote: RemoteMessage): Message {
     volunteerId: remote.volunteer_id,
     sender: remote.sender,
     text: remote.text,
+    sentAt: remote.sent_at ?? null,
     insertedAt: remote.inserted_at,
   };
 }
@@ -410,6 +445,11 @@ export async function getVolunteerMessages(token: string): Promise<Message[]> {
 export interface SendMessagePayload {
   id: string;
   text: string;
+  // Story #54's offline outbox — when this was actually composed/sent,
+  // clamped server-side against sync time. Optional so every existing
+  // call site (this function had no such concept before) keeps compiling
+  // and working unchanged.
+  sentAt?: string;
 }
 
 // sender is never sent from the client — the backend forces it to
@@ -418,7 +458,9 @@ export async function sendVolunteerMessage(token: string, payload: SendMessagePa
   const { data } = await request<{ data: RemoteMessage }>('/volunteer/messages', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ message: { id: payload.id, text: payload.text } }),
+    body: JSON.stringify({
+      message: { id: payload.id, text: payload.text, sent_at: payload.sentAt },
+    }),
   });
   return mapMessage(data);
 }

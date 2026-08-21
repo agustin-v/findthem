@@ -1,75 +1,28 @@
-# React + TypeScript + Vite
+# FindThem UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/TypeScript coordinator frontend for the FindThem search-and-rescue platform —
+create a search, generate road-bounded segments, manage volunteers, chat, and track
+coverage on a live map. See `CLAUDE.md` for full architecture, data flow, and key files.
 
-Currently, two official plugins are available:
+**Stack:** React 19 · TypeScript · Vite · TailwindCSS · shadcn/ui · Zustand · React Query ·
+React Hook Form + Zod · i18next · Clerk (auth) · MapLibre + TomTom (maps)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Run
 
-## React Compiler
-
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```sh
+pnpm install
+pnpm dev          # http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Requires `.env` (see `.env.example`) — a `VITE_TOMTOM_API_KEY`, `VITE_API_URL` pointing
+at `apps/api` (default `http://localhost:4000`), and a `VITE_CLERK_PUBLISHABLE_KEY`.
+This app never talks to `apps/geo` directly — segment generation is proxied through
+`apps/api`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Test & lint
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```sh
+pnpm test    # vitest
+pnpm build   # type-check + build
+pnpm lint    # eslint
 ```

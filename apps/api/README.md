@@ -1,7 +1,10 @@
 # FindThem API
 
-Elixir/Phoenix backend: Postgres-backed CRUD for searches/zones/remarks, and a synchronous
-proxy in front of `apps/geo` for segment generation. API-only (no HTML/assets/mailer).
+Elixir/Phoenix backend: Postgres-backed CRUD for searches/segments/volunteers/remarks/
+messages, realtime updates over Phoenix Channels (REST polling as fallback), and a
+synchronous proxy in front of `apps/geo` for segment generation. API-only (no
+HTML/assets/mailer). See the repo root `CLAUDE.md` (apps/api has no local one) for full
+architecture.
 
 ## Run
 

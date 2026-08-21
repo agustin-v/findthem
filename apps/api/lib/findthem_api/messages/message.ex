@@ -13,6 +13,15 @@ defmodule FindThemApi.Messages.Message do
     field :sender, :string
     field :text, :string
 
+    # Client-supplied (server-clamped in Messages.create_message/2, not
+    # here — see its own comment), distinct from inserted_at: a message
+    # queued offline and synced hours later must not display as having
+    # been sent at sync time. Optional at the schema level (defaults to
+    # inserted_at-equivalent "now" in the context when absent) so the
+    # coordinator's existing send path, which doesn't supply this yet,
+    # keeps working unchanged.
+    field :sent_at, :utc_datetime_usec
+
     # usec, not the Remark-inherited default of second precision — a fast
     # exchange (two messages in the same search-detail session) can easily
     # land in the same second, and unlike Remark this actually gets sorted
@@ -26,8 +35,8 @@ defmodule FindThemApi.Messages.Message do
   # Messages.create_message/2 makes a replay with the same id a no-op.
   def changeset(message, attrs) do
     message
-    |> cast(attrs, [:id, :search_id, :volunteer_id, :sender, :text])
-    |> validate_required([:id, :search_id, :volunteer_id, :sender, :text])
+    |> cast(attrs, [:id, :search_id, :volunteer_id, :sender, :text, :sent_at])
+    |> validate_required([:id, :search_id, :volunteer_id, :sender, :text, :sent_at])
     |> validate_inclusion(:sender, @senders)
     # count: :codepoints, not Ecto's default of :graphemes — the DB column
     # is varchar(2000), which Postgres bounds by character (~codepoint),

@@ -22,7 +22,7 @@ defmodule FindThemApiWeb.VolunteerMessageController do
 
     attrs =
       message_params
-      |> Map.take(["id", "text"])
+      |> Map.take(["id", "text", "sent_at"])
       |> Map.put("volunteer_id", volunteer.id)
       |> Map.put("sender", "volunteer")
 

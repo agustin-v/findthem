@@ -1,7 +1,8 @@
 defmodule FindThemApi.SegmentsTest do
   use FindThemApi.DataCase, async: true
 
-  alias FindThemApi.{Accounts, Searches, Segments, Volunteers}
+  alias FindThemApi.{Accounts, Repo, Searches, Segments, Volunteers}
+  alias FindThemApi.Searches.Generation
 
   setup do
     {:ok, owner} = Accounts.get_or_provision("user_owner_segments", %{email: "z@example.com"})
@@ -22,6 +23,12 @@ defmodule FindThemApi.SegmentsTest do
     {:ok, volunteer} = Volunteers.join_volunteer(search.id, %{name: name, phone: "+390698765"})
     {:ok, approved} = Volunteers.update_volunteer(volunteer, %{status: "approved"})
     approved
+  end
+
+  defp insert_generation(search) do
+    %Generation{}
+    |> Generation.changeset(%{search_id: search.id})
+    |> Repo.insert!()
   end
 
   test "update_segment_status/3 returns :not_found for a segment that was never seeded", %{
@@ -369,5 +376,121 @@ defmodule FindThemApi.SegmentsTest do
 
     [segment] = Segments.list_by_search(search.id)
     assert segment.locked_at == nil
+  end
+
+  describe "update_segment_status/4 with generation_id (Story #54 offline outbox)" do
+    test "rejects a mismatched generation_id as stale instead of silently marking the wrong polygon",
+         %{search: search} do
+      insert_generation(search)
+
+      assert {:error, :stale_generation} =
+               Segments.update_segment_status(
+                 search.id,
+                 3,
+                 %{"status" => "searched", "generation_id" => Ecto.UUID.generate()},
+                 actor: :volunteer
+               )
+    end
+
+    test "accepts a matching generation_id", %{search: search} do
+      generation = insert_generation(search)
+
+      assert {:ok, segment} =
+               Segments.update_segment_status(
+                 search.id,
+                 3,
+                 %{"status" => "searched", "generation_id" => generation.id},
+                 actor: :volunteer
+               )
+
+      assert segment.status == "searched"
+    end
+
+    test "a live write with no generation_id at all is never blocked by this check", %{
+      search: search
+    } do
+      insert_generation(search)
+
+      assert {:ok, %{status: "searched"}} =
+               Segments.update_segment_status(search.id, 3, %{"status" => "searched"},
+                 actor: :volunteer
+               )
+    end
+  end
+
+  describe "update_segment_status/4 with occurred_at (Story #54 offline outbox)" do
+    test "honors a client-supplied occurred_at in the past instead of stamping sync time", %{
+      search: search
+    } do
+      generation = insert_generation(search)
+      # Exactly the generation's own inserted_at, not later — adding time
+      # here would risk landing in the future relative to "now" at call
+      # time (the generation was itself just inserted moments ago), which
+      # would exercise the not-after clamp instead of this test's own
+      # not-before boundary.
+      occurred_at = generation.inserted_at
+
+      {:ok, segment} =
+        Segments.update_segment_status(
+          search.id,
+          3,
+          %{
+            "status" => "searched",
+            "occurred_at" => DateTime.to_iso8601(occurred_at)
+          },
+          actor: :volunteer
+        )
+
+      assert DateTime.compare(segment.searched_at, occurred_at) == :eq
+    end
+
+    test "clamps occurred_at to not predate the current generation", %{search: search} do
+      generation = insert_generation(search)
+      before_generation = DateTime.add(generation.inserted_at, -3600, :second)
+
+      {:ok, segment} =
+        Segments.update_segment_status(
+          search.id,
+          3,
+          %{
+            "status" => "searched",
+            "occurred_at" => DateTime.to_iso8601(before_generation)
+          },
+          actor: :volunteer
+        )
+
+      assert DateTime.compare(segment.searched_at, generation.inserted_at) == :eq
+    end
+
+    test "clamps a future occurred_at to now instead of trusting a suspect client clock", %{
+      search: search
+    } do
+      insert_generation(search)
+      future = DateTime.utc_now() |> DateTime.add(3600, :second)
+
+      {:ok, segment} =
+        Segments.update_segment_status(
+          search.id,
+          3,
+          %{"status" => "searched", "occurred_at" => DateTime.to_iso8601(future)},
+          actor: :volunteer
+        )
+
+      assert DateTime.compare(segment.searched_at, future) == :lt
+    end
+
+    test "falls back to now when occurred_at is absent", %{search: search} do
+      insert_generation(search)
+      # Truncated to :second, same as the stored value ends up — otherwise
+      # a `before` captured with microseconds can appear *later* than the
+      # truncated result even though it was recorded first, purely from
+      # rounding down within the same second.
+      before = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      {:ok, segment} =
+        Segments.update_segment_status(search.id, 3, %{"status" => "searched"}, actor: :volunteer)
+
+      assert DateTime.compare(segment.searched_at, before) in [:eq, :gt]
+    end
   end
 end

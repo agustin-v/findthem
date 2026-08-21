@@ -278,6 +278,57 @@ defmodule FindThemApi.MessagesTest do
     assert Messages.list_by_search(other_search.id) == [other_message]
   end
 
+  test "create_message/2 defaults sent_at to now when omitted", %{
+    search: search,
+    volunteer: volunteer
+  } do
+    before = DateTime.utc_now()
+
+    {:ok, message} =
+      Messages.create_message(search.id, %{
+        id: Ecto.UUID.generate(),
+        volunteer_id: volunteer.id,
+        sender: "coordinator",
+        text: "Hello"
+      })
+
+    assert DateTime.compare(message.sent_at, before) in [:eq, :gt]
+  end
+
+  test "create_message/2 honors a client-supplied sent_at in the past (offline outbox replay)", %{
+    search: search,
+    volunteer: volunteer
+  } do
+    past = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:second)
+
+    {:ok, message} =
+      Messages.create_message(search.id, %{
+        id: Ecto.UUID.generate(),
+        volunteer_id: volunteer.id,
+        sender: "volunteer",
+        text: "Composed offline an hour ago",
+        sent_at: DateTime.to_iso8601(past)
+      })
+
+    assert DateTime.compare(message.sent_at, past) == :eq
+  end
+
+  test "create_message/2 clamps a future sent_at to now instead of trusting a suspect client clock",
+       %{search: search, volunteer: volunteer} do
+    future = DateTime.utc_now() |> DateTime.add(3600, :second)
+
+    {:ok, message} =
+      Messages.create_message(search.id, %{
+        id: Ecto.UUID.generate(),
+        volunteer_id: volunteer.id,
+        sender: "volunteer",
+        text: "Clock is wrong",
+        sent_at: DateTime.to_iso8601(future)
+      })
+
+    assert DateTime.compare(message.sent_at, future) == :lt
+  end
+
   test "list_by_search_and_volunteer/2 scopes to one thread", %{
     search: search,
     volunteer: volunteer

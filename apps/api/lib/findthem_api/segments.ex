@@ -2,6 +2,7 @@ defmodule FindThemApi.Segments do
   import Ecto.Query
 
   alias FindThemApi.Repo
+  alias FindThemApi.Searches
   alias FindThemApi.Searches.Segment
   alias FindThemApi.Volunteers
 
@@ -68,11 +69,13 @@ defmodule FindThemApi.Segments do
 
       segment ->
         attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
+        generation = Searches.latest_generation(search_id)
 
-        with :ok <- check_lock(segment, actor, attrs) do
+        with :ok <- check_lock(segment, actor, attrs),
+             :ok <- check_generation(attrs, generation) do
           changeset_attrs =
             attrs
-            |> put_searched_at(segment)
+            |> put_searched_at(segment, generation)
             |> maybe_clear_lock(segment, actor, attrs)
 
           segment
@@ -114,6 +117,25 @@ defmodule FindThemApi.Segments do
 
   defp check_lock(_segment, :volunteer, _attrs), do: {:error, :segment_locked}
 
+  # Only relevant when the caller actually stamps a generation_id (Story
+  # #54's offline outbox — a queued mark_segment action records the
+  # generation that was current when the volunteer tapped it, widening the
+  # already-accepted read-then-write race above from milliseconds to
+  # however long the action sat in the queue). Absent entirely for every
+  # live, online write (both the coordinator's and a volunteer's own
+  # in-the-moment PATCH), which is why this defaults to :ok rather than
+  # requiring a match — this check exists to catch a *stale replay*, not
+  # to demand every caller thread a generation id through.
+  defp check_generation(%{"generation_id" => generation_id}, generation)
+       when is_binary(generation_id) and generation_id != "" do
+    case generation do
+      %{id: ^generation_id} -> :ok
+      _ -> {:error, :stale_generation}
+    end
+  end
+
+  defp check_generation(_attrs, _generation), do: :ok
+
   # Only clears on a genuine transition into "searched" — the reserved
   # volunteer having finished the work, not merely having sent *any*
   # successful PATCH. Two real bugs this closes, both confirmed by review:
@@ -148,22 +170,72 @@ defmodule FindThemApi.Segments do
 
   # Sticky: searched_at is set once on the transition into "searched" and
   # left alone on repeat PATCHes with the same status.
-  defp put_searched_at(%{"status" => "searched"} = attrs, %Segment{
-         status: "searched",
-         searched_at: existing
-       })
+  defp put_searched_at(
+         %{"status" => "searched"} = attrs,
+         %Segment{
+           status: "searched",
+           searched_at: existing
+         },
+         _generation
+       )
        when not is_nil(existing) do
     attrs
   end
 
-  defp put_searched_at(%{"status" => "searched"} = attrs, _segment) do
-    Map.put(attrs, "searched_at", DateTime.utc_now() |> DateTime.truncate(:second))
+  defp put_searched_at(%{"status" => "searched"} = attrs, _segment, generation) do
+    Map.put(attrs, "searched_at", clamp_occurred_at(attrs["occurred_at"], generation))
   end
 
-  defp put_searched_at(%{"status" => _other} = attrs, _segment),
+  defp put_searched_at(%{"status" => _other} = attrs, _segment, _generation),
     do: Map.put(attrs, "searched_at", nil)
 
-  defp put_searched_at(attrs, _segment), do: attrs
+  defp put_searched_at(attrs, _segment, _generation), do: attrs
+
+  # occurred_at is entirely client-supplied (Story #54's offline outbox —
+  # a sweep completed at 09:00 but synced at 13:00 must record as 09:00,
+  # not sync time, or the coverage timeline lies and, combined with
+  # apps/mobile's own time-based decay-for-searched rendering, makes a
+  # genuinely stale mark display as freshly done). Clamped, not rejected —
+  # a suspect field-device clock shouldn't fail an otherwise-legitimate
+  # "I searched this" report, it should just get bounded into the
+  # plausible window: not before the search's current generation existed
+  # (this segment's polygon didn't exist for the volunteer to have walked
+  # before that), not after now. Falls back to now when absent, unparseable,
+  # or there's no generation to bound against (a segment can't exist
+  # without one in practice, but this stays defensive rather than crashing).
+  defp clamp_occurred_at(raw, generation) do
+    now = DateTime.utc_now()
+
+    raw
+    |> parse_occurred_at()
+    |> case do
+      {:ok, dt} -> dt
+      :error -> now
+    end
+    |> clamp_not_before(generation)
+    |> clamp_not_after(now)
+    |> DateTime.truncate(:second)
+  end
+
+  defp parse_occurred_at(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, dt, _offset} -> {:ok, dt}
+      _ -> :error
+    end
+  end
+
+  defp parse_occurred_at(%DateTime{} = value), do: {:ok, value}
+  defp parse_occurred_at(_value), do: :error
+
+  defp clamp_not_before(dt, %{inserted_at: lower}) when not is_nil(lower) do
+    if DateTime.compare(dt, lower) == :lt, do: lower, else: dt
+  end
+
+  defp clamp_not_before(dt, _generation), do: dt
+
+  defp clamp_not_after(dt, now) do
+    if DateTime.compare(dt, now) == :gt, do: now, else: dt
+  end
 
   # Coordinator-only (enforced by the caller — SegmentController scopes via
   # Searches.get_search_for_owner/2 the same as update_segment_status/3's

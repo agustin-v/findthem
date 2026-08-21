@@ -16,6 +16,7 @@ defmodule FindThemApiWeb.MessageJSON do
       volunteer_id: message.volunteer_id,
       sender: message.sender,
       text: message.text,
+      sent_at: message.sent_at,
       inserted_at: message.inserted_at
     }
   end

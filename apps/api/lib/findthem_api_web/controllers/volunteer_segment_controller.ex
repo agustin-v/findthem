@@ -11,7 +11,7 @@ defmodule FindThemApiWeb.VolunteerSegmentController do
     with {:ok, segment_id} <- parse_segment_id(segment_id_param) do
       attrs =
         params
-        |> Map.take(["status"])
+        |> Map.take(["status", "occurred_at", "generation_id"])
         |> Map.put("searched_by_volunteer_id", volunteer.id)
 
       with {:ok, segment} <-

@@ -5,6 +5,13 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
 
   alias FindThemApi.{Accounts, Repo, Searches, Volunteers, Segments}
   alias FindThemApi.Photos.StorageMock
+  alias FindThemApi.Searches.Generation
+
+  defp insert_generation(search) do
+    %Generation{}
+    |> Generation.changeset(%{search_id: search.id})
+    |> Repo.insert!()
+  end
 
   setup :verify_on_exit!
 
@@ -371,6 +378,45 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert Segments.list_by_search(search.id) == []
   end
 
+  test "PATCH /volunteer/segments/:segment_id rejects a stale generation_id with 409 (offline outbox replay)",
+       %{conn: conn, search: search} do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    insert_generation(search)
+    {_volunteer, token} = approved_volunteer(search)
+
+    conn =
+      conn
+      |> auth(token)
+      |> patch(~p"/volunteer/segments/3", %{
+        "status" => "searched",
+        "generation_id" => Ecto.UUID.generate()
+      })
+
+    assert %{"errors" => %{"generation" => ["stale"]}} = json_response(conn, 409)
+  end
+
+  test "PATCH /volunteer/segments/:segment_id accepts a matching generation_id and an occurred_at",
+       %{conn: conn, search: search} do
+    {:ok, _} = Segments.seed_segments(search.id, [%{segment_id: 3}])
+    generation = insert_generation(search)
+    {_volunteer, token} = approved_volunteer(search)
+    occurred_at = generation.inserted_at
+
+    conn =
+      conn
+      |> auth(token)
+      |> patch(~p"/volunteer/segments/3", %{
+        "status" => "searched",
+        "generation_id" => generation.id,
+        "occurred_at" => DateTime.to_iso8601(occurred_at)
+      })
+
+    assert %{"data" => data} = json_response(conn, 200)
+    assert data["status"] == "searched"
+    [segment] = Segments.list_by_search(search.id)
+    assert DateTime.compare(segment.searched_at, occurred_at) == :eq
+  end
+
   test "POST /volunteer/remarks round-trips client id/reported_at and forces volunteer_id to self",
        %{conn: conn, search: search} do
     {volunteer, token} = approved_volunteer(search)
@@ -425,6 +471,29 @@ defmodule FindThemApiWeb.VolunteerControllerTest do
     assert data["id"] == id
     assert data["volunteer_id"] == volunteer.id
     assert data["sender"] == "volunteer"
+  end
+
+  test "POST /volunteer/messages honors a client-supplied sent_at (offline outbox replay)", %{
+    conn: conn,
+    search: search
+  } do
+    {_volunteer, token} = approved_volunteer(search)
+    sent_at = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:second)
+
+    conn =
+      conn
+      |> auth(token)
+      |> post(~p"/volunteer/messages", %{
+        "message" => %{
+          "id" => Ecto.UUID.generate(),
+          "text" => "Composed offline an hour ago",
+          "sent_at" => DateTime.to_iso8601(sent_at)
+        }
+      })
+
+    assert %{"data" => data} = json_response(conn, 201)
+    {:ok, returned_sent_at, _offset} = DateTime.from_iso8601(data["sent_at"])
+    assert DateTime.compare(returned_sent_at, sent_at) == :eq
   end
 
   test "POST /volunteer/messages with a non-map message value returns 422 instead of crashing", %{

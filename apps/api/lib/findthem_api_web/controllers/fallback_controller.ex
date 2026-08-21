@@ -34,6 +34,17 @@ defmodule FindThemApiWeb.FallbackController do
     |> json(%{errors: %{segment: ["locked"]}})
   end
 
+  # Only reachable when the caller stamps a generation_id (Story #54's
+  # offline outbox) that no longer matches the search's current
+  # generation — segment_id isn't a stable key across a regenerate, so a
+  # multi-hour-stale queued PATCH could otherwise silently mark a
+  # physically different, unwalked polygon as searched.
+  def call(conn, {:error, :stale_generation}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{errors: %{generation: ["stale"]}})
+  end
+
   # Segments.lock/4 requires an explicit locked_for_volunteer_id — see its
   # own comment on why this is never inferred server-side.
   def call(conn, {:error, :volunteer_required}) do

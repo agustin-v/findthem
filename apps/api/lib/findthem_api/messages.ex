@@ -32,12 +32,42 @@ defmodule FindThemApi.Messages do
       attrs
       |> Map.new(fn {k, v} -> {to_string(k), v} end)
       |> Map.put("search_id", search_id)
+      |> Map.update("sent_at", DateTime.utc_now(), &resolve_sent_at/1)
 
     %Message{}
     |> Message.changeset(attrs)
     |> validate_volunteer_in_search(search_id)
     |> Repo.insert(on_conflict: :nothing, conflict_target: :id)
     |> reload_and_broadcast(search_id, :message_created)
+  end
+
+  # sent_at is entirely client-supplied (Story #54's offline outbox — a
+  # message composed while offline and synced hours later must record as
+  # having been sent then, not at sync time) — clamped to "not future"
+  # rather than rejected outright, same reasoning as Segments' occurred_at
+  # clamp: a suspect client clock shouldn't fail an otherwise-legitimate
+  # send, it should just get bounded. Falls back to now when absent
+  # entirely (the coordinator's existing send path doesn't supply this
+  # yet) or unparseable.
+  defp resolve_sent_at(value) do
+    now = DateTime.utc_now()
+
+    parsed =
+      case value do
+        v when is_binary(v) ->
+          case DateTime.from_iso8601(v) do
+            {:ok, dt, _offset} -> dt
+            _ -> now
+          end
+
+        %DateTime{} = dt ->
+          dt
+
+        _ ->
+          now
+      end
+
+    if DateTime.compare(parsed, now) == :gt, do: now, else: parsed
   end
 
   defp validate_volunteer_in_search(changeset, search_id) do
